@@ -179,7 +179,7 @@ public class GithubClient {
 			commitService.getCommits(createRepositoryId());
 			throw new IllegalStateException("Attempting to delete a repository that has commits. Terminating!");
 		} catch(RequestException e) {
-			if(e.getStatus() != 404) {
+			if(e.getStatus() != 404 & e.getStatus() != 409) {
 				throw new IllegalStateException("Attempting to delete a repository, but it appears the repository may have commits. Terminating!", e);
 			}
 		}
@@ -282,6 +282,7 @@ public class GithubClient {
 			String comment = "\n";
 			for(IssueLink outward : outwardIssueLinks) {
 				String linkedJiraKey = outward.getOutwardIssue().getKey();
+				// might be null if linked to a JIRA that was not queried (i.e. we migrate Spring Security and it relates to Spring Framework)
 				ImportedIssue linkedIssue = jiraIdToImportedIssue.get(linkedJiraKey);
 				String linkedIssueReference = linkedIssue == null ?
 						JiraIssue.getBrowserUrl(jiraConfig.getBaseUrl(), linkedJiraKey) : getImportedIssueReference(linkedIssue);
