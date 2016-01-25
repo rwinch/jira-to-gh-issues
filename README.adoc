@@ -1,0 +1,14 @@
+A project for migrating issues from JIRA to GitHub.
+A sample of the migration from Spring Security's JIRA to GitHub issues can be found at https://github.com/rwinch/spring-security-migrate-issues/issues[rwinch/spring-security-migrate-issues]
+See `src/main/resources/application.properties` for settings.
+
+Some Key Features:
+
+* Performs basic conversion from JIRA markup to GitHub markup
+* Uses GitHub's experimental https://gist.github.com/jonmagic/5282384165e0f86ef105[import issue API] for increased speed and to keep dates accurate
+* Links related issues
+* Since GitHub issues does not allow for multiple fix versions, the migration creates a separate issue (called a backport issue) for each additional fix version and links to the original issue.
+Each backport issue has a label named "Backport" on it so they can easily be found/filtered out.
+* Each migrated issue has a Jira label added to it, so that if necessary the migration can be removed and performed again.
+* Each issue has a link to the original JIRA issue
+* Each comment has a link to the JIRA user profile of the original author
