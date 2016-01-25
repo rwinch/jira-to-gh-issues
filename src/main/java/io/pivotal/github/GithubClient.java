@@ -138,8 +138,8 @@ public class GithubClient {
 				return;
 			}
 			long endTime = System.currentTimeMillis() + sleep;
+			System.out.println("Sleeping until "+ new DateTime(endTime));
 			for(long now = System.currentTimeMillis(); now < endTime; now = System.currentTimeMillis()) {
-				System.out.println("Sleeping until "+ new DateTime(endTime));
 				try {
 					Thread.sleep(sleep);
 				} catch (InterruptedException e1) {
