@@ -38,7 +38,11 @@ public class JiraIssue {
 	Fields fields;
 
 	public String getBrowserUrl() {
-		return UriComponentsBuilder.fromHttpUrl(self).replacePath("/browse/").path(key).toUriString();
+		return getBrowserUrl(self, key);
+	}
+
+	public static String getBrowserUrl(String baseUrl, String key) {
+		return UriComponentsBuilder.fromHttpUrl(baseUrl).replacePath("/browse/").path(key).toUriString();
 	}
 
 	@Data

@@ -65,6 +65,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import io.pivotal.jira.IssueLink;
 import io.pivotal.jira.JiraComment;
 import io.pivotal.jira.JiraComponent;
+import io.pivotal.jira.JiraConfig;
 import io.pivotal.jira.JiraFixVersion;
 import io.pivotal.jira.JiraIssue;
 import io.pivotal.jira.JiraIssue.Fields;
@@ -87,6 +88,8 @@ import lombok.RequiredArgsConstructor;
 public class GithubClient {
 	@Autowired
 	GithubConfig config;
+	@Autowired
+	JiraConfig jiraConfig;
 
 	Map<String, String> jiraUsernameToGithubUsername;
 
@@ -280,7 +283,8 @@ public class GithubClient {
 			for(IssueLink outward : outwardIssueLinks) {
 				String linkedJiraKey = outward.getOutwardIssue().getKey();
 				ImportedIssue linkedIssue = jiraIdToImportedIssue.get(linkedJiraKey);
-				String linkedIssueReference = getImportedIssueReference(linkedIssue);
+				String linkedIssueReference = linkedIssue == null ?
+						JiraIssue.getBrowserUrl(jiraConfig.getBaseUrl(), linkedJiraKey) : getImportedIssueReference(linkedIssue);
 				comment += "\nThis issue " + outward.getType().getOutward() + " " + linkedIssueReference;
 			}
 			issueService.createComment(createRepositoryId(), issueNumber, comment);
