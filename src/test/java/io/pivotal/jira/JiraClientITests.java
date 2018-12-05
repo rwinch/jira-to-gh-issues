@@ -63,10 +63,10 @@ public class JiraClientITests {
 		assertThat(issuetype.getId()).isEqualTo(2);
 		assertThat(issuetype.getName()).isEqualTo("New Feature");
 		assertThat(fields.getCreated()).isEqualTo("2005-06-21T20:31:15.000+0000");
-		assertThat(fields.getUpdated()).isEqualTo("2005-10-21T02:57:31.000+0000");
+		assertThat(fields.getUpdated()).isEqualTo("2016-02-06T06:09:14.000+0000");
 
 		List<JiraComment> comments = fields.getComment().getComments();
-		assertThat(comments).hasSize(4);
+		assertThat(comments).hasSize(5);
 		JiraComment first = comments.get(0);
 		assertThat(first.getAuthor().getKey()).isEqualTo("balex");
 		assertThat(first.getAuthor().getDisplayName()).isEqualTo("Ben Alex");
@@ -78,7 +78,7 @@ public class JiraClientITests {
 
 		assertThat(fields.getStatus().getName()).isEqualTo("Closed");
 
-		assertThat(fields.getResolution().getName()).isEqualTo("Fixed");
+		assertThat(fields.getResolution().getName()).isEqualTo("Complete");
 
 		JiraUser reporter = fields.getReporter();
 		assertThat(reporter.getKey()).isEqualTo("balex");
