@@ -42,15 +42,19 @@ import org.eclipse.egit.github.core.service.MilestoneService;
 import org.joda.time.DateTime;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.core.io.Resource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.RequestEntity;
 import org.springframework.http.RequestEntity.BodyBuilder;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.client.ClientHttpResponse;
 import org.springframework.http.client.HttpComponentsClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
+import org.springframework.util.Assert;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RequestCallback;
 import org.springframework.web.client.ResponseExtractor;
@@ -95,6 +99,7 @@ public class GithubClient {
 
 	RestTemplate rest = new GithubRestTemplate();
 
+
 	static class GithubRestTemplate extends RestTemplate {
 		public GithubRestTemplate() {
 			super(new HttpComponentsClientHttpRequestFactory());
@@ -112,13 +117,15 @@ public class GithubClient {
 		private <T> T doExecute(URI url, HttpMethod method, RequestCallback requestCallback,
 				ResponseExtractor<T> responseExtractor, long abuseSleepTimeInSeconds) throws RestClientException {
 			try {
+				System.out.println("Executing " + method + " " + url.getPath());
+				waitForAtLeastOneSecondBetweenRequests();
 				return super.doExecute(url, method, requestCallback, responseExtractor);
 			} catch(HttpClientErrorException e) {
 				HttpHeaders headers = e.getResponseHeaders();
 				long sleep = 0;
 				if(!"0".equals(headers.getFirst("X-RateLimit-Remaining"))) {
 					if(e.getResponseBodyAsString().contains("https://developer.github.com/v3/#abuse-rate-limits")) {
-						System.out.println("Recieved https://developer.github.com/v3/#abuse-rate-limits with no indication of how long to wait. Let's guess & wait "+abuseSleepTimeInSeconds+ " seconds.");
+						System.out.println("Received https://developer.github.com/v3/#abuse-rate-limits with no indication of how long to wait. Let's guess & wait "+abuseSleepTimeInSeconds+ " seconds.");
 						sleep = TimeUnit.SECONDS.toMillis(abuseSleepTimeInSeconds);
 					} else {
 						System.out.println(e.getResponseBodyAsString());
@@ -131,6 +138,12 @@ public class GithubClient {
 				sleepFor(sleep);
 			}
 			return doExecute(url, method, requestCallback, responseExtractor, abuseSleepTimeInSeconds * 2);
+		}
+
+		@Override
+		protected void handleResponse(URI url, HttpMethod method, ClientHttpResponse response) throws IOException {
+			System.out.println(response.getStatusCode() + " " + response.getHeaders());
+			super.handleResponse(url, method, response);
 		}
 
 		private void sleepFor(long sleep) {
@@ -149,6 +162,21 @@ public class GithubClient {
 		}
 
 	}
+
+	private static void waitForAtLeastOneSecondBetweenRequests() {
+		try {
+			// From https://developer.github.com/v3/guides/best-practices-for-integrators/#dealing-with-rate-limits
+			// If you're making a large number of POST, PATCH, PUT, or DELETE requests
+			// for a single user or client ID, wait at least one second between each request.
+
+			Thread.sleep(1000);
+		}
+		catch (InterruptedException ex) {
+			// ignore
+		}
+	}
+
+
 
 	@Autowired
 	MarkupManager markup;
@@ -200,6 +228,16 @@ public class GithubClient {
 		Map<String, String> repository = new HashMap<>();
 		repository.put("name", slug.split("/")[1]);
 		rest.postForEntity(uri.toUriString(), repository, String.class);
+
+		// Workaround for import issue with collision between "bug" (default label) vs "Bug" (Jira issue type)
+
+		LabelService labelService = new LabelService(client());
+		List<Label> labels = labelService.getLabels(createRepositoryId());
+		for (Label label : labels) {
+			if (label.getName().equals("bug")) {
+				labelService.deleteLabel(createRepositoryId(), label.getName());
+			}
+		}
 	}
 
 	public void createMilestones(List<JiraVersion> versions) throws IOException {
@@ -227,20 +265,29 @@ public class GithubClient {
 
 	public void createIssueTypeLabels(List<JiraIssueType> issueTypes) throws IOException {
 		LabelService labels = new LabelService(client());
-		Set<String> existingLabels = labels.getLabels(createRepositoryId()).stream().map(l -> l.getName().toLowerCase())
-				.collect(Collectors.toSet());
+		Set<String> existingLabels = labels.getLabels(createRepositoryId()).stream()
+				.map(Label::getName).collect(Collectors.toSet());
 		for (JiraIssueType issueType : issueTypes) {
-			if (existingLabels.contains(issueType.getName().toLowerCase())) {
+			String newLabel = issueType.getName();
+			String existingLabel = existingLabels.stream()
+					.filter(existing -> existing.equalsIgnoreCase(newLabel))
+					.findAny()
+					.orElse(null);
+			if (existingLabel != null) {
+				Assert.isTrue(existingLabel.equals(newLabel),
+						"Existing label '" + existingLabel + "' is almost the same as new label " +
+								"'" + newLabel + "' except for a difference in case which could issue import.");
 				continue;
 			}
 			Label label = new Label();
 			label.setColor("eeeeee");
-			label.setName(issueType.getName());
+			label.setName(newLabel);
 			labels.createLabel(createRepositoryId(), label);
 		}
 	}
 
 	// https://gist.github.com/jonmagic/5282384165e0f86ef105#start-an-issue-import
+
 	public void createIssues(List<JiraIssue> issues) throws IOException, InterruptedException {
 		MilestoneService milestones = new MilestoneService(client());
 		Map<String, Milestone> nameToMilestone = milestones.getMilestones(createRepositoryId(), "all").stream()
@@ -329,14 +376,21 @@ public class GithubClient {
 
 		long secondsToWait = 1;
 		while(true) {
-			ResponseEntity<ImportStatusResponse> result = rest.exchange(request, ImportStatusResponse.class);
-			String url = result.getBody().getIssueUrl();
-			if(url == null) {
-				System.out.println("Issue "+ importedIssue.getJiraIssue().getKey()+" is still pending import, waiting "+secondsToWait +" seconds to look up GitHub issue number again");
+			ResponseEntity<Map<String, Object>> result = rest.exchange(request, new ParameterizedTypeReference<Map<String, Object>>() {});
+			Map<String, Object> body = result.getBody();
+			String url = (String) body.get("issue_url");
+			String status = (String) body.get("status");
+			if ("failed".equals(status)) {
+				throw new IllegalStateException("Ticket import failed: " + body);
+			}
+			else if ("pending".equals(status)) {
+				System.out.println("Issue "+ importedIssue.getJiraIssue().getKey()+
+						" is still pending import, waiting "+secondsToWait +" seconds to look up GitHub issue number again");
 				Thread.sleep(TimeUnit.SECONDS.toMillis(secondsToWait));
 				secondsToWait = (1 + secondsToWait) * 2;
 				continue;
 			}
+			Assert.notNull(url, "No URL for imported issue: " + body);
 			UriComponents parts = UriComponentsBuilder.fromUriString(url).build();
 			List<String> segments = parts.getPathSegments();
 			int issueNumber = Integer.parseInt(segments.get(segments.size() - 1));
@@ -485,11 +539,30 @@ public class GithubClient {
 
 			@Override
 			protected HttpURLConnection configureRequest(HttpURLConnection request) {
+				System.out.println("Request " + request.getRequestMethod().toUpperCase() + " " + request.getURL().getPath());
+				waitForAtLeastOneSecondBetweenRequests();
 				HttpURLConnection result = super.configureRequest(request);
 				result.setRequestProperty(HEADER_ACCEPT, MediaType.APPLICATION_JSON_VALUE);
 				return result;
 			}
 
+			@Override
+			protected GitHubClient updateRateLimits(HttpURLConnection request) {
+				GitHubClient client = super.updateRateLimits(request);
+				System.out.println(getHttpStatus(request) + " " + request.getHeaderFields());
+				return client;
+			}
+
+			private HttpStatus getHttpStatus(HttpURLConnection request) {
+				try {
+					int code = request.getResponseCode();
+					return HttpStatus.valueOf(code);
+				}
+				catch (IOException ex) {
+					ex.printStackTrace();
+					return null;
+				}
+			}
 		};
 		githubClient.setOAuth2Token(getAccessToken());
 		return githubClient;

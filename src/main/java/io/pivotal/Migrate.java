@@ -15,6 +15,7 @@
  */
 package io.pivotal;
 
+import java.io.IOException;
 import java.util.List;
 
 import org.springframework.beans.factory.annotation.Autowired;
@@ -46,42 +47,56 @@ public class Migrate implements CommandLineRunner {
 	@Autowired
 	JiraConfig jiraConfig;
 
+
 	public static void main(String args[]) {
 		SpringApplication.run(Migrate.class);
 	}
 
+
 	@Override
 	public void run(String... strings) throws Exception {
+
+		setupRepository();
+
+		createMilestonesAndLabels();
+
+		createIssues();
+
+	}
+
+	private void setupRepository() throws IOException {
 		try {
+			// Delete if github.delete-create-repository-slug=true and 0 commits
 			github.deleteRepository();
-		}catch(HttpClientErrorException e) {
+		}
+		catch(HttpClientErrorException e) {
 			if(e.getStatusCode().value() != HttpStatus.NOT_FOUND.value()) {
 				throw e;
 			}
 		}
 		System.out.println("Creating a test repository to place the issues in");
 		github.createRepository();
+	}
 
+	private void createMilestonesAndLabels() throws IOException {
 		System.out.println("Finding the project info");
-		JiraProject project = jira.findProject(getJiraProjectId());
+		JiraProject project = jira.findProject(jiraConfig.getProjectId());
 
 		System.out.println("Creating Milestones");
 		github.createMilestones(project.getVersions());
+
 		System.out.println("Creating Labels");
 		github.createComponentLabels(project.getComponents());
 		github.createIssueTypeLabels(project.getIssueTypes());
+	}
 
+	private void createIssues() throws IOException, InterruptedException {
 		System.out.println("Getting JIRA issues");
 		List<JiraIssue> issues = jira.findIssues(jiraConfig.getMigrateJql());
 		System.out.println("Found "+issues.size()+ " JIRA issues to migrate");
 
 		System.out.println("Creating issues");
 		github.createIssues(issues);
-
-	}
-
-	private String getJiraProjectId() {
-		return jiraConfig.getProjectId();
 	}
 
 }

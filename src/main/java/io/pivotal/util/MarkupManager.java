@@ -32,8 +32,14 @@ public class MarkupManager {
 	TextileEngine textile;
 
 	public MarkupEngine engine(DateTime date) {
-		return isMarkDown(date) ? markdown : textile;
+		// Force markdown: it seems to work better currently than it might have originally.
+		// Original method below..
+		return markdown;
 	}
+
+//	public MarkupEngine engine(DateTime date) {
+//		return isMarkDown(date) ? markdown : textile;
+//	}
 
 	private static boolean isMarkDown(DateTime date) {
 		return date.isAfter(DateTime.parse("2009-04-20T19:00:00Z"));
