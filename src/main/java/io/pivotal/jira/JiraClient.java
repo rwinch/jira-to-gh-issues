@@ -44,7 +44,9 @@ public class JiraClient {
 		Long startAt = 0L;
 
 		while(startAt != null) {
-			ResponseEntity<JiraSearchResult> result = rest.getForEntity(jiraConfig.getBaseUrl() + "/rest/api/2/search?maxResults=1000&startAt={0}&jql={jql}&fields=summary,comment,assignee,components,created,creator,description,fixVersions,issuetype,reporter,resolution,status,subtasks,issuelinks,resolution,updated", JiraSearchResult.class, startAt, jql);
+			ResponseEntity<JiraSearchResult> result = rest.getForEntity(
+					jiraConfig.getBaseUrl() + "/rest/api/2/search?maxResults=1000&startAt={0}&jql={jql}&fields=" +
+							JiraIssue.FIELD_NAMES, JiraSearchResult.class, startAt, jql);
 			JiraSearchResult body = result.getBody();
 			results.addAll(body.getIssues());
 			startAt = body.getNextStartAt();

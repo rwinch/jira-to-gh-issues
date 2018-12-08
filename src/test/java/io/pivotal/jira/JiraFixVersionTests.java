@@ -56,6 +56,7 @@ public class JiraFixVersionTests {
 		assertFixVersions("4.0 M1","4.0 M2").sortsAs("4.0 M2","4.0 M1");
 		assertFixVersions("4.0 M1","4.0 RC1").sortsAs("4.0 RC1","4.0 M1");
 		assertFixVersions("4.0 RC1","4.0 RC2").sortsAs("4.0 RC2","4.0 RC1");
+		assertFixVersions("5.1 RC3","5.1 GA").sortsAs("5.1 GA","5.1 RC3");
 	}
 
 	@Test

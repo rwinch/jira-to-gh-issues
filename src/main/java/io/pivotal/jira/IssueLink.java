@@ -27,7 +27,7 @@ import lombok.Data;
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class IssueLink {
 	RelatedIssue outwardIssue;
-	RelatedIssue indwardIssue;
+	RelatedIssue inwardIssue;
 	RelatedType type;
 
 

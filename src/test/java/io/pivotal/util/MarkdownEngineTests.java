@@ -15,8 +15,12 @@
  */
 package io.pivotal.util;
 
+import java.util.HashMap;
+import java.util.Map;
+
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.pivotal.jira.JiraUser;
 import org.junit.Before;
 import org.junit.Test;
 
@@ -70,6 +74,18 @@ public class MarkdownEngineTests {
 	}
 
 	@Test
+	public void orderedList() {
+		String body = "# Some Text\n    # More\n\t\t# And More";
+		assertThat(engine.convert(body)).isEqualTo("- Some Text\n- More\n- And More");
+	}
+
+	@Test
+	public void unorderedList() {
+		String body = "* Some Text\n    * More\n\t\t* And More";
+		assertThat(engine.convert(body)).isEqualTo("- Some Text\n- More\n- And More");
+	}
+
+	@Test
 	public void twoLinks() {
 		String body =
 				" a [fix|https://fisheye.springsource.org/changelog/spring-security?cs=ffe2834f4cd900d99c4a490af62613d087c9aceb] the [Spring Security forums|http://forum.springsource.org/forumdisplay.php?33-Security]";
@@ -79,9 +95,25 @@ public class MarkdownEngineTests {
 
 	@Test
 	public void userMention() {
-		String body = "[~awilkinson] Thanks for the report. This should now be fixed.";
+		Map<String, JiraUser> lookup = new HashMap<>();
+		lookup.put("juergen.hoeller", createUser("juergen.hoeller", "Juergen Hoeller"));
+		lookup.put("rstoya05-aop", createUser("rstoya05-aop", "Rossen Stoyanchev"));
+		engine.configureUserLookup(lookup);
 
-		assertThat(engine.convert(body)).startsWith("[awilkinson](https://jira.spring.io/secure/ViewProfile.jspa?name=awilkinson)");
+		String body = "[~juergen.hoeller] abcd [~rstoya05-aop] efg [~unknown] ...";
+
+		assertThat(engine.convert(body)).isEqualTo(
+				"[Juergen Hoeller](https://jira.spring.io/secure/ViewProfile.jspa?name=juergen.hoeller) abcd " +
+				"[Rossen Stoyanchev](https://jira.spring.io/secure/ViewProfile.jspa?name=rstoya05-aop) efg " +
+				"[unknown](https://jira.spring.io/secure/ViewProfile.jspa?name=unknown) ...");
+	}
+
+	private JiraUser createUser(String key, String displayName) {
+		JiraUser user = new JiraUser();
+		user.setKey(key);
+		user.setDisplayName(displayName);
+		user.setSelf("https://jira.spring.io");
+		return user;
 	}
 
 	@Test
@@ -177,4 +209,19 @@ public class MarkdownEngineTests {
 				"    </filter-mapping>\n" +
 				"```");
 	}
+
+	@Test
+	public void lineQuote() {
+		String body = "bq.Some Text\n  bq. More Text\n\t\tbq. And More";
+		assertThat(engine.convert(body)).isEqualTo("> Some Text\n>  More Text\n>  And More");
+	}
+
+	@Test
+	public void colorTag() {
+		String body = "I believe {color:red}after{color} should be replaced with " +
+				"{color:red}or{color},'cause statement in the parentheses is describing initializing methods.";
+		assertThat(engine.convert(body)).isEqualTo("I believe **after** should be replaced with " +
+				"**or**,'cause statement in the parentheses is describing initializing methods.");
+	}
+
 }

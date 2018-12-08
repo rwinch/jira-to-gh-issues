@@ -15,11 +15,18 @@
  */
 package io.pivotal.util;
 
+import java.util.Map;
+
+import io.pivotal.jira.JiraUser;
+
 /**
  * @author Rob Winch
  *
  */
 public interface MarkupEngine {
+
+	/** For user mentions in comments. */
+	void configureUserLookup(Map<String, JiraUser> userLookup);
 
 	String link(String text, String href);
 

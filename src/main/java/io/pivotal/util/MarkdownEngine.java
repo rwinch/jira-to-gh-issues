@@ -15,12 +15,18 @@
  */
 package io.pivotal.util;
 
+import java.util.HashMap;
+import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+import io.pivotal.jira.JiraConfig;
+import io.pivotal.jira.JiraUser;
+import lombok.Data;
+
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
-
-import io.pivotal.jira.JiraConfig;
-import lombok.Data;
 
 /**
  * @author Rob Winch
@@ -29,11 +35,22 @@ import lombok.Data;
 @Data
 @Component
 public class MarkdownEngine implements MarkupEngine {
+
+	private static final Pattern userPattern = Pattern.compile("\\[~([^\\]]+)\\]");
+
 	String jiraBaseUrl;
 
+	private Map<String, JiraUser> userLookup = new HashMap<>();
+
+
 	@Autowired
-	public void setJiraClient(JiraConfig jiraConfig) {
+	public void setJiraConfig(JiraConfig jiraConfig) {
 		jiraBaseUrl = jiraConfig.getBaseUrl();
+	}
+
+	@Override
+	public void configureUserLookup(Map<String, JiraUser> userLookup) {
+		this.userLookup.putAll(userLookup);
 	}
 
 	@Override
@@ -46,6 +63,8 @@ public class MarkdownEngine implements MarkupEngine {
 		if(!StringUtils.hasLength(text)) {
 			return "";
 		}
+		text = text.replaceAll("(?m)^[ \\t]*# ", "- ");
+		text = text.replaceAll("(?m)^[ \\t]*\\* ", "- ");
 		text = header(text);
 		text = text.replaceAll("\\{(code|noformat)(:(\\w+))?(?:(:|\\|)\\w+=.+?)*\\}","```$3 ");
 		text = text.replaceAll("(```\\w*) (.+)", "$1\n$2");
@@ -53,7 +72,30 @@ public class MarkdownEngine implements MarkupEngine {
 		text = text.replaceAll("\\[(.+?)\\|(http.*?)\\]","[$1]($2)");
 		text = text.replaceAll("\\{\\{(.+?)\\}\\}","`$1`");
 		text = quote(text);
-		return text.replaceAll("\\[~([\\w]+)\\]", "[$1](" + jiraBaseUrl + "/secure/ViewProfile.jspa?name=$1)");
+		text = text.replaceAll("(?m)^[ \\t]*bq\\.", "> ");
+		text = text.replaceAll("\\{(color)(:(\\w+))?(?:(:|\\|)\\w+=.+?)*\\}","**");
+		text = replaceUserMentions(text);
+		return text;
+	}
+
+	private String replaceUserMentions(String text) {
+		Matcher matcher = userPattern.matcher(text);
+		StringBuffer sb = new StringBuffer();
+		while (matcher.find()) {
+			String key = matcher.group(1);
+			JiraUser user = this.userLookup.getOrDefault(key, createUser(key));
+			matcher.appendReplacement(sb, "[" + user.getDisplayName() + "](" + user.getBrowserUrl() + ")");
+		}
+		matcher.appendTail(sb);
+		return sb.toString();
+	}
+
+	private JiraUser createUser(String key) {
+		JiraUser user = new JiraUser();
+		user.setKey(key);
+		user.setDisplayName(key);
+		user.setSelf(this.jiraBaseUrl);
+		return user;
 	}
 
 	public String header(String text) {

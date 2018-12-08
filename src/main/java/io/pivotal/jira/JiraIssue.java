@@ -17,6 +17,7 @@ package io.pivotal.jira;
 
 import java.util.List;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import org.joda.time.DateTime;
 import org.springframework.web.util.UriComponentsBuilder;
 
@@ -31,6 +32,12 @@ import lombok.Data;
 @Data
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class JiraIssue {
+
+	public static final String FIELD_NAMES = "summary,comment,assignee,components,created,creator," +
+			"description,fixVersions,issuetype,reporter,resolution,status,subtasks,issuelinks," +
+			"resolution,updated,customfield_10120,customfield_10684";
+
+
 	String key;
 
 	String self;
@@ -61,5 +68,10 @@ public class JiraIssue {
 		JiraUser reporter;
 		JiraUser assignee;
 		List<IssueLink> issuelinks;
+		@JsonProperty("customfield_10120")
+		String referenceUrl;
+		@JsonProperty("customfield_10684")
+		String pullRequestUrl;
 	}
+
 }

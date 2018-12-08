@@ -71,6 +71,9 @@ public class JiraFixVersion {
 			if(index >= parts.length) {
 				return 0;
 			}
+			if (parts[index].equals("GA")) {
+				return 0;
+			}
 			String toParse = parts[index];
 			try {
 				return Integer.parseInt(toParse);

@@ -15,12 +15,18 @@
  */
 package io.pivotal.util;
 
+import java.util.HashMap;
+import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+import io.pivotal.jira.JiraConfig;
+import io.pivotal.jira.JiraUser;
+import lombok.Data;
+
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
-
-import io.pivotal.jira.JiraConfig;
-import lombok.Data;
 
 /**
  * http://redcloth.org/textile
@@ -34,8 +40,13 @@ public class TextileEngine implements MarkupEngine {
 	String jiraBaseUrl;
 
 	@Autowired
-	public void setJiraClient(JiraConfig jiraConfig) {
+	public void setJiraConfig(JiraConfig jiraConfig) {
 		jiraBaseUrl = jiraConfig.getBaseUrl();
+	}
+
+	@Override
+	public void configureUserLookup(Map<String, JiraUser> userLookup) {
+		// ignore
 	}
 
 	@Override

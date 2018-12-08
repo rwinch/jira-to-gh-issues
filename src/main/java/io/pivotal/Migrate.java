@@ -16,7 +16,22 @@
 package io.pivotal;
 
 import java.io.IOException;
+import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
+
+import io.pivotal.github.DefaultMilestoneHandler;
+import io.pivotal.github.GithubClient;
+import io.pivotal.github.GithubIssue;
+import io.pivotal.github.LabelMapper;
+import io.pivotal.jira.JiraClient;
+import io.pivotal.jira.JiraComponent;
+import io.pivotal.jira.JiraConfig;
+import io.pivotal.jira.JiraIssue;
+import io.pivotal.jira.JiraProject;
+import io.pivotal.jira.JiraVersion;
+import org.eclipse.egit.github.core.Label;
+import org.eclipse.egit.github.core.Milestone;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.CommandLineRunner;
@@ -24,12 +39,6 @@ import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.client.HttpClientErrorException;
-
-import io.pivotal.github.GithubClient;
-import io.pivotal.jira.JiraClient;
-import io.pivotal.jira.JiraConfig;
-import io.pivotal.jira.JiraIssue;
-import io.pivotal.jira.JiraProject;
 
 /**
  * @author Rob Winch
@@ -56,9 +65,16 @@ public class Migrate implements CommandLineRunner {
 	@Override
 	public void run(String... strings) throws Exception {
 
+		github.setMilestoneHandler(new SpringFrameworkMilestoneHandler());
+		github.setComponentLabelMapper(new ComponentLabelMapper().ignoreList("[Other]"));
+		github.setIssueTypeLabelMapper(new IssueTypeLabelMapper().ignoreList("Backport", "Sub-task"));
+
 		setupRepository();
 
-		createMilestonesAndLabels();
+		JiraProject project = jira.findProject(jiraConfig.getProjectId());
+		createMilestones(project);
+		createComponentLabels(project);
+		createIssueTypeLabels(project);
 
 		createIssues();
 
@@ -78,15 +94,19 @@ public class Migrate implements CommandLineRunner {
 		github.createRepository();
 	}
 
-	private void createMilestonesAndLabels() throws IOException {
-		System.out.println("Finding the project info");
-		JiraProject project = jira.findProject(jiraConfig.getProjectId());
-
-		System.out.println("Creating Milestones");
+	private void createMilestones(JiraProject project) throws IOException {
+		System.out.println("Creating milestones");
 		github.createMilestones(project.getVersions());
+	}
 
-		System.out.println("Creating Labels");
-		github.createComponentLabels(project.getComponents());
+	private void createComponentLabels(JiraProject project) throws IOException {
+		System.out.println("Creating component labels");
+		List<JiraComponent> components = project.getComponents();
+		github.createComponentLabels(components);
+	}
+
+	private void createIssueTypeLabels(JiraProject project) throws IOException {
+		System.out.println("Creating issue type labels");
 		github.createIssueTypeLabels(project.getIssueTypes());
 	}
 
@@ -97,6 +117,46 @@ public class Migrate implements CommandLineRunner {
 
 		System.out.println("Creating issues");
 		github.createIssues(issues);
+	}
+
+
+	private static class SpringFrameworkMilestoneHandler extends DefaultMilestoneHandler {
+
+		List<String> skipList = Arrays.asList("Contributions Welcome", "Pending Closure", "Waiting for Triage");
+
+
+		@Override
+		public Milestone mapVersion(JiraVersion version) {
+			return !skipList.contains(version.getName()) ? super.mapVersion(version) : null;
+		}
+
+		@Override
+		public void applyVersion(GithubIssue ghIssue, String fixVersion, Map<String, Milestone> milestones) {
+			if (fixVersion.equals("Waiting for Triage")) {
+				ghIssue.getLabels().add("status: waiting-for-triage");
+			}
+			else {
+				super.applyVersion(ghIssue, fixVersion, milestones);
+			}
+		}
+	}
+
+	private static class ComponentLabelMapper extends LabelMapper {
+
+		@Override
+		protected void processLabel(Label label, String nameValue) {
+			label.setName("in: " + nameValue.replaceAll("[ :]", "-").replaceAll("^\\[(.*)\\]$", "$1").toLowerCase());
+			label.setColor("008672");
+		}
+	}
+
+	private static class IssueTypeLabelMapper extends LabelMapper {
+
+		@Override
+		protected void processLabel(Label label, String nameValue) {
+			label.setName("type: " + nameValue.toLowerCase());
+			label.setColor("000000");
+		}
 	}
 
 }

@@ -15,6 +15,9 @@
  */
 package io.pivotal.util;
 
+import java.util.Map;
+
+import io.pivotal.jira.JiraUser;
 import org.joda.time.DateTime;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
@@ -25,11 +28,21 @@ import org.springframework.stereotype.Component;
  */
 @Component
 public class MarkupManager {
+
 	@Autowired
 	MarkdownEngine markdown;
 
 	@Autowired
 	TextileEngine textile;
+
+
+	/**
+	 * For user mentions in comments.
+	 */
+	public void configureUserLookup(Map<String, JiraUser> userLookup) {
+		this.markdown.configureUserLookup(userLookup);
+		this.textile.configureUserLookup(userLookup);
+	}
 
 	public MarkupEngine engine(DateTime date) {
 		// Force markdown: it seems to work better currently than it might have originally.
