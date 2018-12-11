@@ -1,0 +1,4 @@
+# ==========================
+# Spring Framework migration
+# ==========================
+mentions=@andy,@arjen,@aseem,@boaz,@bozho,@brian,@cedric,@chris,@christian,@costin,@dan,@dave,@david,@dmitry,@dorongold,@florent,@grant,@guillermo,@harald,@igal,@iurii,@jenkins,@jim,@jkuhs,@john,@jon,@juergen,@julian,@jurgen,@keith,@kesav,@ludovic,@magne,@masterspambot,@matthew,@michael,@micka,@mike,@morten,@msgilligan,@netshift,@nick,@nicoll,@nils,@oliver,@pedro,@pomelko,@pravat,@putthibong,@rickgong,@rob,@ronald,@rossen,@sam,@sanghyuk,@scott,@sebastien,@stefan,@stevo,@taras,@thomas,@tobias79,@tom,@tommy,@tristan,@venkat,@zoltan

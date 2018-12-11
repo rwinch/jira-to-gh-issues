@@ -15,7 +15,9 @@
  */
 package io.pivotal.util;
 
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -36,21 +38,31 @@ import org.springframework.util.StringUtils;
 @Component
 public class MarkdownEngine implements MarkupEngine {
 
-	private static final Pattern userPattern = Pattern.compile("\\[~([^\\]]+)\\]");
+	public static final Pattern jiraMentionPattern = Pattern.compile("\\[~([^\\]]+)\\]");
+
+	public static final Pattern ghMentionPattern = Pattern.compile("([^\\w~]*)(@[\\w-]+)");
+
 
 	String jiraBaseUrl;
 
 	private Map<String, JiraUser> userLookup = new HashMap<>();
 
+	private List<String> userMentionsToEscape = new ArrayList<>();
+
 
 	@Autowired
 	public void setJiraConfig(JiraConfig jiraConfig) {
-		jiraBaseUrl = jiraConfig.getBaseUrl();
+		this.jiraBaseUrl = jiraConfig.getBaseUrl();
 	}
 
 	@Override
 	public void configureUserLookup(Map<String, JiraUser> userLookup) {
 		this.userLookup.putAll(userLookup);
+	}
+
+	@Override
+	public void setUserMentionsToEscape(List<String> userMentions) {
+		this.userMentionsToEscape.addAll(userMentions);
 	}
 
 	@Override
@@ -74,12 +86,26 @@ public class MarkdownEngine implements MarkupEngine {
 		text = quote(text);
 		text = text.replaceAll("(?m)^[ \\t]*bq\\.", "> ");
 		text = text.replaceAll("\\{(color)(:(\\w+))?(?:(:|\\|)\\w+=.+?)*\\}","**");
-		text = replaceUserMentions(text);
+		text = escapeGithubStyleUserMentions(text);
+		text = replaceUserKeysInJiraMentions(text);
 		return text;
 	}
 
-	private String replaceUserMentions(String text) {
-		Matcher matcher = userPattern.matcher(text);
+	private String escapeGithubStyleUserMentions(String text) {
+		Matcher matcher = ghMentionPattern.matcher(text);
+		StringBuffer sb = new StringBuffer();
+		while (matcher.find()) {
+			String key = matcher.group(2);
+			if (this.userMentionsToEscape.contains(key.toLowerCase())) {
+				matcher.appendReplacement(sb, matcher.group(1) + "`" + key + "`");
+			}
+		}
+		matcher.appendTail(sb);
+		return sb.toString();
+	}
+
+	private String replaceUserKeysInJiraMentions(String text) {
+		Matcher matcher = jiraMentionPattern.matcher(text);
 		StringBuffer sb = new StringBuffer();
 		while (matcher.find()) {
 			String key = matcher.group(1);

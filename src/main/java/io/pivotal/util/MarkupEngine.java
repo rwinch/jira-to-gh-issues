@@ -15,6 +15,7 @@
  */
 package io.pivotal.util;
 
+import java.util.List;
 import java.util.Map;
 
 import io.pivotal.jira.JiraUser;
@@ -25,8 +26,19 @@ import io.pivotal.jira.JiraUser;
  */
 public interface MarkupEngine {
 
-	/** For user mentions in comments. */
-	void configureUserLookup(Map<String, JiraUser> userLookup);
+
+	default void setUserMentionsToEscape(List<String> userMentions) {
+		// no-op
+	}
+
+	/**
+	 * Configure a user key to JiraUser lookup, in order to allow showing the
+	 * user display name as opposed to tje user key in user mentions. This is
+	 * invoked at runtime when the users are scraped from Jira issues.
+	 */
+	default void configureUserLookup(Map<String, JiraUser> userLookup) {
+		// no-op
+	}
 
 	String link(String text, String href);
 

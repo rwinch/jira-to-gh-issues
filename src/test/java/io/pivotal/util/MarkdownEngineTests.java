@@ -15,6 +15,7 @@
  */
 package io.pivotal.util;
 
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -94,7 +95,7 @@ public class MarkdownEngineTests {
 	}
 
 	@Test
-	public void userMention() {
+	public void userKeyToDisplayName() {
 		Map<String, JiraUser> lookup = new HashMap<>();
 		lookup.put("juergen.hoeller", createUser("juergen.hoeller", "Juergen Hoeller"));
 		lookup.put("rstoya05-aop", createUser("rstoya05-aop", "Rossen Stoyanchev"));
@@ -114,6 +115,26 @@ public class MarkdownEngineTests {
 		user.setDisplayName(displayName);
 		user.setSelf("https://jira.spring.io");
 		return user;
+	}
+
+	@Test
+	public void escapedGhStyleUserMentions() {
+		engine.setUserMentionsToEscape(Arrays.asList("@fc", "@keith"));
+
+		String body = "@Keith: if you have a use case where the lifecycle callbacks are not honored, " +
+				"please raise a separate JIRA issue with an example that reproduces that.\n\n" +
+				"The one type of dependency injection that @FC types do support is parameter " +
+				"injection into @Feature methods. This approach is both convenient for " +
+				"the author of the @Feature method (no need to declare and reference an " +
+				"@Inject'ed field, and avoids lifecycle issues.";
+
+		assertThat(engine.convert(body)).isEqualTo(
+				"`@Keith`: if you have a use case where the lifecycle callbacks are not honored, " +
+						"please raise a separate JIRA issue with an example that reproduces that.\n\n" +
+						"The one type of dependency injection that `@FC` types do support is parameter " +
+						"injection into @Feature methods. This approach is both convenient for " +
+						"the author of the @Feature method (no need to declare and reference an " +
+						"@Inject'ed field, and avoids lifecycle issues.");
 	}
 
 	@Test
