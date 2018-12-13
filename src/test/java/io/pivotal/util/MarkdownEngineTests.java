@@ -46,8 +46,8 @@ public class MarkdownEngineTests {
 
 	@Test
 	public void h2() {
-		String body = "h2. Some Text\nMore";
-		assertThat(engine.convert(body)).isEqualTo("## Some Text\nMore");
+		String body = "h2. Some Text\nh2. Some More Text\nMore";
+		assertThat(engine.convert(body)).isEqualTo("## Some Text\n## Some More Text\nMore");
 	}
 
 	@Test

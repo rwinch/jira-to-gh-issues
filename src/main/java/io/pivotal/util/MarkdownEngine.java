@@ -75,8 +75,8 @@ public class MarkdownEngine implements MarkupEngine {
 		if(!StringUtils.hasLength(text)) {
 			return "";
 		}
-		text = text.replaceAll("(?m)^[ \\t]*# ", "- ");
-		text = text.replaceAll("(?m)^[ \\t]*\\* ", "- ");
+		text = text.replaceAll("(?m)^[ \\t]*# ", "- "); // ordered list
+		text = text.replaceAll("(?m)^[ \\t]*\\* ", "- "); // unordered list
 		text = header(text);
 		text = text.replaceAll("\\{(code|noformat)(:(\\w+))?(?:(:|\\|)\\w+=.+?)*\\}","```$3 ");
 		text = text.replaceAll("(```\\w*) (.+)", "$1\n$2");
@@ -125,12 +125,12 @@ public class MarkdownEngine implements MarkupEngine {
 	}
 
 	public String header(String text) {
-		text = text.replaceAll("^h1. ", "# ");
-		text = text.replaceAll("^h2. ", "## ");
-		text = text.replaceAll("^h3. ", "### ");
-		text = text.replaceAll("^h4. ", "#### ");
-		text = text.replaceAll("^h5. ", "##### ");
-		text = text.replaceAll("^h6. ", "###### ");
+		text = text.replaceAll("(?m)^h1. ", "# ");
+		text = text.replaceAll("(?m)^h2. ", "## ");
+		text = text.replaceAll("(?m)^h3. ", "### ");
+		text = text.replaceAll("(?m)^h4. ", "#### ");
+		text = text.replaceAll("(?m)^h5. ", "##### ");
+		text = text.replaceAll("(?m)^h6. ", "###### ");
 		return text;
 	}
 

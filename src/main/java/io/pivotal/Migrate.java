@@ -124,7 +124,6 @@ public class Migrate implements CommandLineRunner {
 
 		List<String> skipList = Arrays.asList("Contributions Welcome", "Pending Closure", "Waiting for Triage");
 
-
 		@Override
 		public Milestone mapVersion(JiraVersion version) {
 			return !skipList.contains(version.getName()) ? super.mapVersion(version) : null;
@@ -154,7 +153,7 @@ public class Migrate implements CommandLineRunner {
 
 		@Override
 		protected void processLabel(Label label, String nameValue) {
-			label.setName("type: " + nameValue.toLowerCase());
+			label.setName("type: " + nameValue.replaceAll("[ :]", "-").toLowerCase());
 			label.setColor("000000");
 		}
 	}
