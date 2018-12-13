@@ -17,14 +17,16 @@ package io.pivotal.jira;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+
+import lombok.Data;
 
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.http.ResponseEntity;
+import org.springframework.core.ParameterizedTypeReference;
+import org.springframework.http.HttpMethod;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestOperations;
 import org.springframework.web.client.RestTemplate;
-
-import lombok.Data;
 
 /**
  * @author Rob Winch
@@ -44,19 +46,26 @@ public class JiraClient {
 		Long startAt = 0L;
 
 		while(startAt != null) {
-			ResponseEntity<JiraSearchResult> result = rest.getForEntity(
+			JiraSearchResult result = rest.getForObject(
 					jiraConfig.getBaseUrl() + "/rest/api/2/search?maxResults=1000&startAt={0}&jql={jql}&fields=" +
 							JiraIssue.FIELD_NAMES, JiraSearchResult.class, startAt, jql);
-			JiraSearchResult body = result.getBody();
-			results.addAll(body.getIssues());
-			startAt = body.getNextStartAt();
+			results.addAll(result.getIssues());
+			startAt = result.getNextStartAt();
 		}
 
 		return results;
 	}
 
 	public JiraProject findProject(String id) {
-		ResponseEntity<JiraProject> result = rest.getForEntity(jiraConfig.getBaseUrl() + "/rest/api/2/project/{id}", JiraProject.class, id);
-		return result.getBody();
+		return rest.getForObject(jiraConfig.getBaseUrl() + "/rest/api/2/project/{id}", JiraProject.class, id);
 	}
+
+	public Map<String, Object> getCommitDetail(JiraIssue issue) {
+		// No official API, below is the URL used in the browser
+		return rest.exchange(jiraConfig.getBaseUrl() +
+				"/rest/dev-status/1.0/issue/detail?issueId={id}&applicationType=github&dataType=repository",
+				HttpMethod.GET, null, new ParameterizedTypeReference<Map<String, Object>>() {}, issue.getId())
+				.getBody();
+	}
+
 }

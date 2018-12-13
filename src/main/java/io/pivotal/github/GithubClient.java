@@ -32,13 +32,15 @@ import java.util.stream.Collectors;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import io.pivotal.jira.IssueLink;
+import io.pivotal.jira.JiraClient;
 import io.pivotal.jira.JiraComment;
 import io.pivotal.jira.JiraComponent;
-import io.pivotal.jira.JiraConfig;
 import io.pivotal.jira.JiraFixVersion;
 import io.pivotal.jira.JiraIssue;
 import io.pivotal.jira.JiraIssue.Fields;
 import io.pivotal.jira.JiraIssueType;
+import io.pivotal.jira.JiraResolution;
+import io.pivotal.jira.JiraStatus;
 import io.pivotal.jira.JiraUser;
 import io.pivotal.jira.JiraVersion;
 import io.pivotal.util.MarkupEngine;
@@ -73,6 +75,7 @@ import org.springframework.http.client.ClientHttpResponse;
 import org.springframework.http.client.HttpComponentsClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.util.Assert;
+import org.springframework.util.CollectionUtils;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.HttpClientErrorException;
@@ -93,7 +96,9 @@ public class GithubClient {
 
 	GithubConfig config;
 
-	JiraConfig jiraConfig;
+	String jiraBaseUrl;
+
+	JiraClient jiraClient;
 
 	MarkupManager markup;
 
@@ -111,11 +116,14 @@ public class GithubClient {
 
 	IRepositoryIdProvider repositoryIdProvider;
 
+	DateTime migrationDateTime = DateTime.now();
+
 
 	@Autowired
-	public GithubClient(GithubConfig config, JiraConfig jiraConfig, MarkupManager markup) {
+	public GithubClient(GithubConfig config, JiraClient jiraClient, MarkupManager markup) {
 		this.config = config;
-		this.jiraConfig = jiraConfig;
+		this.jiraBaseUrl= jiraClient.getJiraConfig().getBaseUrl();
+		this.jiraClient = jiraClient;
 		this.markup = markup;
 		this.repositoryIdProvider = RepositoryId.createFromId(this.config.getRepositorySlug());
 	}
@@ -222,9 +230,11 @@ public class GithubClient {
 			importedIssues.put(jiraIssue.getKey(), importedIssue);
 			// Every 100 or so, verify imported issues succeeded
 			if (i % 100 == 0 && i != 0) {
-				importedIssues.values().forEach(importedIssue1 -> findGithubIssueNumber(importedIssue1));
+				importedIssues.values().forEach(this::findGithubIssueNumber);
 			}
 		}
+		// One last time, verify all issues imported
+		importedIssues.values().forEach(this::findGithubIssueNumber);
 		System.out.println("Imported " + issues.size() + " issues in total\n");
 
 		System.out.println("Checking backport versions");
@@ -305,24 +315,31 @@ public class GithubClient {
 
 	private GithubIssue initGithubIssue(JiraIssue issue, JiraFixVersion fixVersion, Map<String, Milestone> milestones) {
 		Fields fields = issue.getFields();
-		boolean closed = fields.getResolution() != null;
 		DateTime updated = fields.getUpdated();
 		GithubIssue ghIssue = new GithubIssue();
-		ghIssue.setTitle(fields.getSummary());
+		ghIssue.setTitle("[" + issue.getKey() + "] " + fields.getSummary());
 
-		String migratedLink = issue.getBrowserUrl();
 		MarkupEngine engine = markup.engine(issue.getFields().getCreated());
 		JiraUser reporter = fields.getReporter();
-		String body = "#### **" + engine.link(reporter.getDisplayName(), reporter.getBrowserUrl()) + "** " +
-				"opened this issue at **" + engine.link(issue.getKey(), migratedLink) + "**\n";
+		String reporterLink = engine.link(reporter.getDisplayName(), reporter.getBrowserUrl());
+		String body = "**" + reporterLink + "** commented\n";
 		if(fields.getDescription() != null) {
 			body += "\n" + engine.convert(fields.getDescription());
 		}
 		ghIssue.setBody(body);
+
+		// From the Jira docs ("Working with workflows"):
+		//
+		// In JIRA, an issue is either open or closed, based on the value of its 'Resolution' field — not its 'Status' field.
+		// An issue is open if its resolution field has not been set.
+		// An issue is closed if its resolution field has a value (e.g. Fixed, Cannot Reproduce).
+		// This is true regardless of the current value of the issue's status field (Open, In Progress, etc).
+		boolean closed = fields.getResolution() != null;
 		ghIssue.setClosed(closed);
 		if (closed) {
 			ghIssue.setClosedAt(updated);
 		}
+
 		JiraUser assignee = fields.getAssignee();
 		if (assignee != null) {
 			String ghUsername = jiraToGithubUsername.get(assignee.getKey());
@@ -359,14 +376,14 @@ public class GithubClient {
 		Fields fields = issue.getFields();
 		MarkupEngine engine = markup.engine(fields.getCreated());
 		List<GithubComment> comments = new ArrayList<>();
-		GithubComment infoComment = initInfoComment(issue, engine);
+		GithubComment infoComment = initJiraDetailComment(issue, engine);
 		if (infoComment != null) {
 			comments.add(infoComment);
 		}
 		for (JiraComment jiraComment : fields.getComment().getComments()) {
 			GithubComment comment = new GithubComment();
 			String userUrl = jiraComment.getAuthor().getBrowserUrl();
-			String body = "#### **" + engine.link(jiraComment.getAuthor().getDisplayName(), userUrl) + "** commented\n\n";
+			String body = "**" + engine.link(jiraComment.getAuthor().getDisplayName(), userUrl) + "** commented\n\n";
 			body += engine.convert(jiraComment.getBody());
 			comment.setBody(body);
 			comment.setCreatedAt(jiraComment.getCreated());
@@ -375,41 +392,89 @@ public class GithubClient {
 		return comments;
 	}
 
-	private GithubComment initInfoComment(JiraIssue issue, MarkupEngine engine) {
-		String body = "#### Details from Jira issue\n";
+	private GithubComment initJiraDetailComment(JiraIssue issue, MarkupEngine engine) {
+		String body = "**Issue " + engine.link(issue.getKey(), issue.getBrowserUrl()) + " migrated to GitHub**\n";
+		body += "\nDetails from Jira\n";
 		Fields fields = issue.getFields();
-		body += "\nStatus: " + (fields.getStatus() != null ? fields.getStatus().getName() : "none");
-		body += "\nResolution: " + (fields.getResolution() != null ? fields.getResolution().getName() : "Unresolved");
+		JiraStatus status = fields.getStatus();
+		JiraResolution resolution = fields.getResolution();
+		body += "\n_Status: " + (status != null ? status.getName() : "none") +
+				" | Resolution: " + (resolution != null ? resolution.getName() : "none") + "_\n";
+		List<JiraVersion> affects = fields.getVersions();
+		List<JiraFixVersion> fixedIn = fields.getFixVersions();
+		if (!affects.isEmpty() || !fixedIn.isEmpty()) {
+			body += "\n" +
+					(!CollectionUtils.isEmpty(affects) ?
+							affects.stream().map(JiraVersion::getName).collect(Collectors.joining(", ", "Affects ", ". ")) : "") +
+					(!CollectionUtils.isEmpty(fixedIn) ?
+							fixedIn.stream().map(JiraFixVersion::getName).collect(Collectors.joining(", ", "Fixed in ", ".")) :
+							"") + "\n";
+		}
+		if (fields.getReferenceUrl() != null) {
+			body += "\nReference URL:\n" + fields.getReferenceUrl() + "\n";
+		}
+		if (fields.getPullRequestUrl() != null) {
+			body += "\nPull Request " + fields.getPullRequestUrl() + "\n";
+		}
+		JiraIssue parent = fields.getParent();
+		if (parent != null) {
+			String key = parent.getKey();
+			String browserUrl = JiraIssue.getBrowserUrl(jiraBaseUrl, key);
+			body += "\nThis issue is a sub-task of " + engine.link(key, browserUrl) + " " +
+					parent.getFields().getSummary() + "\n";
+		}
+		if (!fields.getSubtasks().isEmpty()) {
+			body += fields.getSubtasks().stream()
+					.map(subtask -> {
+						String key = subtask.getKey();
+						String browserUrl = JiraIssue.getBrowserUrl(jiraBaseUrl, key);
+						return "- " + engine.link(key, browserUrl) + " " + subtask.getFields().getSummary();
+					})
+					.collect(Collectors.joining("\n", "\nSub-tasks:\n", "\n"));
+		}
 		if (!fields.getIssuelinks().isEmpty()) {
 			body += fields.getIssuelinks().stream()
 					.map(link -> {
-						// For now use Jira Browser URL. Later will edit to replace with GH issue numbers.
+						// For now link to Jira. Later we'll make another pass to replace with GH issue numbers.
+						String key;
+						String linkType;
+						String title;
 						if (link.getOutwardIssue() != null) {
-							String key = link.getOutwardIssue().getKey();
-							return engine.link(key, JiraIssue.getBrowserUrl(jiraConfig.getBaseUrl(), key)) +
-									" (" + link.getType().getOutward() + ")";
+							key = link.getOutwardIssue().getKey();
+							linkType = link.getType().getOutward();
+							title = link.getOutwardIssue().getFields().getSummary();
 						}
 						else {
-							String key = link.getInwardIssue().getKey();
-							return engine.link(key, JiraIssue.getBrowserUrl(jiraConfig.getBaseUrl(), key)) +
-									" (" + link.getType().getInward() + ")";
+							key = link.getInwardIssue().getKey();
+							linkType = link.getType().getInward();
+							title = link.getInwardIssue().getFields().getSummary();
 						}
+						return "- " + engine.link(key, JiraIssue.getBrowserUrl(jiraBaseUrl, key)) + " " +
+								title + " [**" + linkType + "**]";
 					})
-					.collect(Collectors.joining(", ", "\nIssue Links: ", ""));
+					.collect(Collectors.joining("\n", "\nIssue Links:\n", "\n"));
 		}
-		if (fields.getReferenceUrl() != null) {
-			body += "\nReference URL: " + fields.getReferenceUrl();
-		}
-		if (fields.getPullRequestUrl() != null) {
-			body += "\nPull Request URL: " + fields.getPullRequestUrl();
-		}
-		if (body.isEmpty()) {
-			return null;
-		}
+		body += getCommitInfo(issue).stream().collect(Collectors.joining(", ", "\nCommits: ", "\n"));
 		GithubComment comment = new GithubComment();
 		comment.setBody(body);
-		comment.setCreatedAt(fields.getCreated());
+		comment.setCreatedAt(migrationDateTime);
 		return comment;
+	}
+
+	@SuppressWarnings("unchecked")
+	private List<String> getCommitInfo(JiraIssue issue) {
+		Map<String, Object> topResult = jiraClient.getCommitDetail(issue);
+		if (topResult != null) {
+			List<Map<String, Object>> detailMaps = (List<Map<String, Object>>) topResult.get("detail");
+			if (!detailMaps.isEmpty()) {
+				List<Map<String, Object>> repoMaps = (List<Map<String, Object>>) detailMaps.get(0).get("repositories");
+				if (!repoMaps.isEmpty()) {
+					List<Map<String, Object>> commitsMap = (List<Map<String, Object>>) repoMaps.get(0).get("commits");
+					return commitsMap.stream().map(map -> (String) map.get("url")).collect(Collectors.toList());
+				}
+			}
+		}
+		return Collections.emptyList();
 	}
 
 	private GithubIssue initMilestoneBackportIssue(Milestone milestone, List<ImportedIssue> backportIssues) {

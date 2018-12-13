@@ -17,13 +17,12 @@ package io.pivotal.jira;
 
 import java.util.List;
 
-import com.fasterxml.jackson.annotation.JsonProperty;
-import org.joda.time.DateTime;
-import org.springframework.web.util.UriComponentsBuilder;
-
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
-
+import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.Data;
+import org.joda.time.DateTime;
+
+import org.springframework.web.util.UriComponentsBuilder;
 
 /**
  * @author Rob Winch
@@ -34,9 +33,11 @@ import lombok.Data;
 public class JiraIssue {
 
 	public static final String FIELD_NAMES = "summary,comment,assignee,components,created,creator," +
-			"description,fixVersions,issuetype,reporter,resolution,status,subtasks,issuelinks," +
-			"resolution,updated,customfield_10120,customfield_10684";
+			"description,versions,fixVersions,issuetype,reporter,resolution,status,issuelinks," +
+			"resolution,updated,parent,subtasks,customfield_10120,customfield_10684";
 
+
+	String id;
 
 	String key;
 
@@ -49,7 +50,8 @@ public class JiraIssue {
 	}
 
 	public static String getBrowserUrl(String baseUrl, String key) {
-		return UriComponentsBuilder.fromHttpUrl(baseUrl).replacePath("/browse/").path(key).toUriString();
+		return UriComponentsBuilder.fromHttpUrl(baseUrl).replacePath("/browse/").path(key)
+				.queryParam("redirect", "false").toUriString();
 	}
 
 	@Data
@@ -62,12 +64,15 @@ public class JiraIssue {
 		DateTime updated;
 		JiraCommentPage comment;
 		List<JiraComponent> components;
+		List<JiraVersion> versions;
 		List<JiraFixVersion> fixVersions;
 		JiraStatus status;
 		JiraResolution resolution;
 		JiraUser reporter;
 		JiraUser assignee;
 		List<IssueLink> issuelinks;
+		JiraIssue parent;
+		List<JiraIssue> subtasks;
 		@JsonProperty("customfield_10120")
 		String referenceUrl;
 		@JsonProperty("customfield_10684")
