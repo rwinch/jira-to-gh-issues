@@ -15,13 +15,9 @@
  */
 package io.pivotal.jira;
 
-import java.util.ArrayList;
-import java.util.Collections;
 import java.util.Comparator;
-import java.util.List;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
-
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -37,11 +33,15 @@ import lombok.NoArgsConstructor;
 public class JiraFixVersion {
 	String name;
 
-	public static List<JiraFixVersion> sort(List<JiraFixVersion> versions) {
-		List<JiraFixVersion> toSort = new ArrayList<>(versions);
-		Collections.sort(toSort, new JiraFixVersionComparator());
-		return toSort;
+	public boolean isMilestoneOrReleaseCandidate() {
+		return name.matches(".* RC[1-9]") || name.matches(".* M[1-9]");
 	}
+
+
+	public static Comparator<JiraFixVersion> comparator() {
+		return new JiraFixVersionComparator();
+	}
+
 
 	private static class JiraFixVersionComparator implements Comparator<JiraFixVersion> {
 		static final String PARTS_EXPRESSION = "[\\. ]";

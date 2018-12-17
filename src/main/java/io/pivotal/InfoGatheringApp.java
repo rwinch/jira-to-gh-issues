@@ -28,7 +28,6 @@ import java.util.stream.Stream;
 import io.pivotal.jira.JiraClient;
 import io.pivotal.jira.JiraComment;
 import io.pivotal.jira.JiraConfig;
-import io.pivotal.jira.JiraFixVersion;
 import io.pivotal.jira.JiraIssue;
 import io.pivotal.jira.JiraUser;
 import io.pivotal.util.MarkdownEngine;
@@ -93,8 +92,7 @@ public class InfoGatheringApp {
 	private static Integer estimatePotentialBackports(List<JiraIssue> issues) {
 		int count = 0;
 		for (JiraIssue issue : issues) {
-			List<JiraFixVersion> fixVersions = JiraFixVersion.sort(issue.getFields().getFixVersions());
-			count += fixVersions.size() > 1 ? fixVersions.size() - 1 : 0;
+			count += issue.getBackportVersions().size();
 		}
 		return count;
 	}

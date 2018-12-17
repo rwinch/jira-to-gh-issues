@@ -13,29 +13,17 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.pivotal.github;
+package io.pivotal;
 
-
-import java.util.Map;
+import java.util.function.Predicate;
 
 import io.pivotal.jira.JiraVersion;
-import org.eclipse.egit.github.core.Milestone;
-
-import org.springframework.lang.Nullable;
 
 
-public interface MilestoneHandler {
-
-	/**
-	 * How a Jira version is mapped to GH milestone, possibly skipping some.
-	 */
-	@Nullable
-	Milestone mapVersion(JiraVersion version);
-
-	/**
-	 * How a Jira version is applied to a GH issue, or alternatively applying a label instead
-	 * (e.g. "Waiting for Triage" version to "waiting-for-triage" label).
-	 */
-	void applyVersion(GithubIssue ghIssue, String fixVersion, Map<String, Milestone> milestones);
-
+/**
+ * A predicate to determine if a Jira version should be become a GitHub Milestone,
+ * e.g. the version "Waiting for Triage", used in SPR becomes the label
+ * "status: waiting-for-triage" and not a milestone.
+ */
+public interface MilestoneFilter extends Predicate<JiraVersion> {
 }

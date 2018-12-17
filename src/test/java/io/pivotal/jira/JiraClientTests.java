@@ -20,6 +20,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.jodatime.api.Assertions.assertThat;
 
 import java.util.List;
+import java.util.stream.Collectors;
 
 import org.junit.Before;
 import org.junit.Test;
@@ -28,9 +29,9 @@ import io.pivotal.jira.JiraIssue.Fields;
 
 /**
  * @author Rob Winch
- *
+ * @author Rossen Stoyanchev
  */
-public class JiraClientITests {
+public class JiraClientTests {
 	private JiraClient client;
 
 	@Before
@@ -98,6 +99,34 @@ public class JiraClientITests {
 		assertThat(versions).extracting(JiraVersion::getName).contains("0.9.0","4.1.0 M1");
 		assertThat(project.getIssueTypes()).extracting(JiraIssueType::getName).contains("Bug","New Feature","Task");
 		assertThat(project.getComponents()).extracting(JiraComponent::getName).contains("ACLs","Test","Core");
+	}
+
+	@Test
+	public void votesAndCommits() {
+		List<JiraIssue> issues = client.findIssuesVotesAndCommits("id = SPR-6373");
+
+		assertThat(issues).hasSize(1);
+		JiraIssue issue = issues.get(0);
+		assertThat(issue.getVotes()).isEqualTo(54);
+		List<String> commitUrls = issue.getCommitUrls();
+		assertThat(commitUrls).hasSize(2);
+	}
+
+	@Test
+	public void fixVersionAndBackportVersions() {
+		List<JiraIssue> issues = client.findIssues("id = SPR-17178");
+
+		assertThat(issues).hasSize(1);
+		JiraIssue issue = issues.get(0);
+
+		List<String> all = issue.getFields().getFixVersions().stream().map(JiraFixVersion::getName).collect(Collectors.toList());
+		assertThat(all).contains("5.1 RC2", "5.0.9", "4.3.19").hasSize(3);
+
+		String fixedIn = issue.getFixVersion().getName();
+		assertThat(fixedIn).isEqualTo("5.0.9");
+
+		List<String> backportedTo = issue.getBackportVersions().stream().map(JiraFixVersion::getName).collect(Collectors.toList());
+		assertThat(backportedTo).contains("4.3.19").hasSize(1);
 	}
 
 }

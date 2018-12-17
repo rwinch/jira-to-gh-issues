@@ -75,7 +75,8 @@ public class JiraFixVersionTests {
 
 		public void sortsAs(String... names) {
 			List<JiraFixVersion> toSort = create(this.names);
-			assertThat(JiraFixVersion.sort(toSort)).extracting(JiraFixVersion::getName).containsExactly(names);
+			toSort.sort(JiraFixVersion.comparator());
+			assertThat(toSort).extracting(JiraFixVersion::getName).containsExactly(names);
 		}
 
 		private static List<JiraFixVersion> create(String...names) {

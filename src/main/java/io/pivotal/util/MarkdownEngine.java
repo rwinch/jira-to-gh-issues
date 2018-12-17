@@ -85,7 +85,7 @@ public class MarkdownEngine implements MarkupEngine {
 		text = text.replaceAll("\\{\\{(.+?)\\}\\}","`$1`");
 		text = quote(text);
 		text = text.replaceAll("(?m)^[ \\t]*bq\\.", "> ");
-		text = text.replaceAll("\\{(color)(:(\\w+))?(?:(:|\\|)\\w+=.+?)*\\}","**");
+		text = text.replaceAll("\\{(color)(:((#)?\\w+))?(?:(:|\\|)\\w+=.+?)*\\}","**");
 		text = escapeGithubStyleUserMentions(text);
 		text = replaceUserKeysInJiraMentions(text);
 		return text;

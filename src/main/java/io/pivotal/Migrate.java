@@ -15,23 +15,15 @@
  */
 package io.pivotal;
 
-import java.io.IOException;
-import java.util.Arrays;
 import java.util.List;
-import java.util.Map;
 
-import io.pivotal.github.DefaultMilestoneHandler;
 import io.pivotal.github.GithubClient;
-import io.pivotal.github.GithubIssue;
-import io.pivotal.github.LabelMapper;
 import io.pivotal.jira.JiraClient;
-import io.pivotal.jira.JiraComponent;
 import io.pivotal.jira.JiraConfig;
 import io.pivotal.jira.JiraIssue;
 import io.pivotal.jira.JiraProject;
-import io.pivotal.jira.JiraVersion;
-import org.eclipse.egit.github.core.Label;
-import org.eclipse.egit.github.core.Milestone;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.CommandLineRunner;
@@ -46,6 +38,9 @@ import org.springframework.web.client.HttpClientErrorException;
  */
 @SpringBootApplication
 public class Migrate implements CommandLineRunner {
+
+	static final Logger logger = LogManager.getLogger(Migrate.class);
+
 
 	@Autowired
 	JiraClient jira;
@@ -65,97 +60,26 @@ public class Migrate implements CommandLineRunner {
 	@Override
 	public void run(String... strings) throws Exception {
 
-		github.setMilestoneHandler(new SpringFrameworkMilestoneHandler());
-		github.setComponentLabelMapper(new ComponentLabelMapper().ignoreList("[Other]"));
-		github.setIssueTypeLabelMapper(new IssueTypeLabelMapper().ignoreList("Backport", "Sub-task"));
-
-		setupRepository();
-
-		JiraProject project = jira.findProject(jiraConfig.getProjectId());
-		createMilestones(project);
-		createComponentLabels(project);
-		createIssueTypeLabels(project);
-
-		createIssues();
-
-	}
-
-	private void setupRepository() throws IOException {
 		try {
-			// Delete if github.delete-create-repository-slug=true and 0 commits
+			// Delete if github.delete-create-repository-slug=true AND 0 commits
 			github.deleteRepository();
 		}
-		catch(HttpClientErrorException e) {
-			if(e.getStatusCode().value() != HttpStatus.NOT_FOUND.value()) {
-				throw e;
+		catch (HttpClientErrorException ex) {
+			if (ex.getStatusCode().value() != HttpStatus.NOT_FOUND.value()) {
+				throw ex;
 			}
 		}
-		System.out.println("Creating a test repository to place the issues in");
+
 		github.createRepository();
-	}
 
-	private void createMilestones(JiraProject project) throws IOException {
-		System.out.println("Creating milestones");
+		github.createLabels();
+
+		JiraProject project = jira.findProject(jiraConfig.getProjectId());
 		github.createMilestones(project.getVersions());
-	}
 
-	private void createComponentLabels(JiraProject project) throws IOException {
-		System.out.println("Creating component labels");
-		List<JiraComponent> components = project.getComponents();
-		github.createComponentLabels(components);
-	}
+		List<JiraIssue> issues = jira.findIssuesVotesAndCommits(jiraConfig.getMigrateJql());
 
-	private void createIssueTypeLabels(JiraProject project) throws IOException {
-		System.out.println("Creating issue type labels");
-		github.createIssueTypeLabels(project.getIssueTypes());
-	}
-
-	private void createIssues() throws IOException, InterruptedException {
-		System.out.println("Getting JIRA issues");
-		List<JiraIssue> issues = jira.findIssues(jiraConfig.getMigrateJql());
-		System.out.println("Found "+issues.size()+ " JIRA issues to migrate");
-
-		System.out.println("Creating issues");
 		github.createIssues(issues);
-	}
-
-
-	private static class SpringFrameworkMilestoneHandler extends DefaultMilestoneHandler {
-
-		List<String> skipList = Arrays.asList("Contributions Welcome", "Pending Closure", "Waiting for Triage");
-
-		@Override
-		public Milestone mapVersion(JiraVersion version) {
-			return !skipList.contains(version.getName()) ? super.mapVersion(version) : null;
-		}
-
-		@Override
-		public void applyVersion(GithubIssue ghIssue, String fixVersion, Map<String, Milestone> milestones) {
-			if (fixVersion.equals("Waiting for Triage")) {
-				ghIssue.getLabels().add("status: waiting-for-triage");
-			}
-			else {
-				super.applyVersion(ghIssue, fixVersion, milestones);
-			}
-		}
-	}
-
-	private static class ComponentLabelMapper extends LabelMapper {
-
-		@Override
-		protected void processLabel(Label label, String nameValue) {
-			label.setName("in: " + nameValue.replaceAll("[ :]", "-").replaceAll("^\\[(.*)\\]$", "$1").toLowerCase());
-			label.setColor("008672");
-		}
-	}
-
-	private static class IssueTypeLabelMapper extends LabelMapper {
-
-		@Override
-		protected void processLabel(Label label, String nameValue) {
-			label.setName("type: " + nameValue.replaceAll("[ :]", "-").toLowerCase());
-			label.setColor("000000");
-		}
 	}
 
 }

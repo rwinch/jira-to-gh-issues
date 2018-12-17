@@ -15,6 +15,8 @@
  */
 package io.pivotal.jira;
 
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
@@ -34,7 +36,8 @@ public class JiraIssue {
 
 	public static final String FIELD_NAMES = "summary,comment,assignee,components,created,creator," +
 			"description,versions,fixVersions,issuetype,reporter,resolution,status,issuelinks," +
-			"resolution,updated,parent,subtasks,customfield_10120,customfield_10684";
+			"resolution,updated,parent,subtasks,labels,attachment,watches," +
+			"customfield_10120,customfield_10684";
 
 
 	String id;
@@ -45,14 +48,45 @@ public class JiraIssue {
 
 	Fields fields;
 
+
+	/**
+	 * The version to use as the "Milestone" on GitHub.
+	 * <p>Note that if the most recent fix version is a development version (i.e. M1, RC1, etc),
+	 * and the issue has backports, we'll skip over that use the latest GA version as the
+	 * Github milestone for the issue.
+	 */
+	JiraFixVersion fixVersion;
+
+	/** The list of versions the issue was backported to */
+	List<JiraFixVersion> backportVersions = Collections.emptyList();
+
+	int votes;
+
+	List<String> commitUrls;
+
+	String jiraBaseUrl;
+
+
 	public String getBrowserUrl() {
-		return getBrowserUrl(self, key);
+		return getBrowserUrlFor(key);
 	}
 
-	public static String getBrowserUrl(String baseUrl, String key) {
-		return UriComponentsBuilder.fromHttpUrl(baseUrl).replacePath("/browse/").path(key)
-				.queryParam("redirect", "false").toUriString();
+	public String getBrowserUrlFor(String key) {
+		return UriComponentsBuilder.fromHttpUrl(self)
+				.replacePath("/browse/").path(key).queryParam("redirect", "false")
+				.toUriString();
 	}
+
+	public void initFixAndBackportVersions() {
+		List<JiraFixVersion> versions = new ArrayList<>(fields.getFixVersions());
+		versions.sort(JiraFixVersion.comparator());
+		if (versions.size() > 1 && versions.get(0).isMilestoneOrReleaseCandidate()) {
+			versions.remove(0);
+		}
+		fixVersion = versions.isEmpty() ? null : versions.get(0);
+		backportVersions = versions.size() > 1 ? versions.subList(1, versions.size()) : Collections.emptyList();
+	}
+
 
 	@Data
 	@JsonIgnoreProperties(ignoreUnknown = true)
@@ -73,6 +107,9 @@ public class JiraIssue {
 		List<IssueLink> issuelinks;
 		JiraIssue parent;
 		List<JiraIssue> subtasks;
+		List<String> labels;
+		List<JiraAttachment> attachment;
+		JiraWatcher watches;
 		@JsonProperty("customfield_10120")
 		String referenceUrl;
 		@JsonProperty("customfield_10684")

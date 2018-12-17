@@ -245,4 +245,14 @@ public class MarkdownEngineTests {
 				"**or**,'cause statement in the parentheses is describing initializing methods.");
 	}
 
+	@Test
+	public void colorTag2() {
+		String body = "{color:#ff0000}assertTrue((sar).hasAlias(\"real_name\", \"alias_b\"));{color} //case 1\n" +
+				" sar.registerAlias(\"name\", \"alias_d\");\n" +
+				" {color:#ff0000}assertFalse((sar).hasAlias(\"real_name\", \"alias_b\"));{color} //case 2";
+		assertThat(engine.convert(body)).isEqualTo(
+				"**assertTrue((sar).hasAlias(\"real_name\", \"alias_b\"));** //case 1\n" +
+						" sar.registerAlias(\"name\", \"alias_d\");\n" +
+						" **assertFalse((sar).hasAlias(\"real_name\", \"alias_b\"));** //case 2");
+	}
 }
