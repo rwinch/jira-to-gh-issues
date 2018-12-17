@@ -13,17 +13,14 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.pivotal;
+package io.pivotal.migration;
 
 import java.util.List;
 
-import io.pivotal.github.GithubClient;
 import io.pivotal.jira.JiraClient;
 import io.pivotal.jira.JiraConfig;
 import io.pivotal.jira.JiraIssue;
 import io.pivotal.jira.JiraProject;
-import org.apache.logging.log4j.LogManager;
-import org.apache.logging.log4j.Logger;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.CommandLineRunner;
@@ -34,26 +31,23 @@ import org.springframework.web.client.HttpClientErrorException;
 
 /**
  * @author Rob Winch
- *
+ * @see InfoGatheringApp
  */
 @SpringBootApplication
-public class Migrate implements CommandLineRunner {
-
-	static final Logger logger = LogManager.getLogger(Migrate.class);
-
+public class MainApp implements CommandLineRunner {
 
 	@Autowired
 	JiraClient jira;
 
 	@Autowired
-	GithubClient github;
+	MigrationClient github;
 
 	@Autowired
 	JiraConfig jiraConfig;
 
 
 	public static void main(String args[]) {
-		SpringApplication.run(Migrate.class);
+		SpringApplication.run(MainApp.class);
 	}
 
 

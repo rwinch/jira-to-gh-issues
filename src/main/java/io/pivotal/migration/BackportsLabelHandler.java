@@ -13,34 +13,31 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.pivotal;
+package io.pivotal.migration;
 
-
+import java.util.Collections;
 import java.util.Set;
 
 import io.pivotal.jira.JiraIssue;
 import org.eclipse.egit.github.core.Label;
 
-
 /**
- * Assist with the creation of GitHub labels in the beginning of the migration,
- * and later with deciding which labels to apply to migrated issues.
- *
  * @author Rossen Stoyanchev
  */
-public interface LabelHandler {
+public class BackportsLabelHandler implements LabelHandler {
 
-	/**
-	 * Return all labels that this handler may apply to an issue,
-	 * so those may be pre-created.
-	 */
-	Set<Label> getAllLabels();
+	private static final Label label = LabelFactories.HAS_LABEL.apply("backports");
 
-	/**
-	 * Map a {@link JiraIssue} to a set of applicable labels.
-	 */
-	Set<String> getLabelsFor(JiraIssue issue);
+	private static final Set<String> labelSet = Collections.singleton(label.getName());
 
 
+	@Override
+	public Set<Label> getAllLabels() {
+		return Collections.singleton(label);
+	}
 
+	@Override
+	public Set<String> getLabelsFor(JiraIssue issue) {
+		return !issue.getBackportVersions().isEmpty() ? labelSet : Collections.emptySet();
+	}
 }

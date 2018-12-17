@@ -13,32 +13,34 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.pivotal;
+package io.pivotal.migration;
 
-import java.util.function.Function;
 
+import java.util.Set;
+
+import io.pivotal.jira.JiraIssue;
 import org.eclipse.egit.github.core.Label;
 
 
 /**
+ * Assist with the creation of GitHub labels in the beginning of the migration,
+ * and later with deciding which labels to apply to migrated issues.
+ *
  * @author Rossen Stoyanchev
  */
-public class LabelFactories {
+public interface LabelHandler {
 
-	public static final Function<String, Label> TYPE_LABEL = name -> create("type: ", name, "c9c2f9");
+	/**
+	 * Return all labels that this handler may apply to an issue,
+	 * so those may be pre-created.
+	 */
+	Set<Label> getAllLabels();
 
-	public static final Function<String, Label> STATUS_LABEL = name -> create("status: ", name, "f7e983");
+	/**
+	 * Map a {@link JiraIssue} to a set of applicable labels.
+	 */
+	Set<String> getLabelsFor(JiraIssue issue);
 
-	public static final Function<String, Label> IN_LABEL = name -> create("in: ", name, "008672");
 
-	public static final Function<String, Label> HAS_LABEL = name -> create("has: ", name, "b8daf2");
-
-
-	private static Label create(String prefix, String labelName, String color) {
-		Label label = new Label();
-		label.setName(prefix + labelName);
-		label.setColor(color);
-		return label;
-	}
 
 }

@@ -13,31 +13,32 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.pivotal;
+package io.pivotal.migration;
 
-import java.util.Collections;
-import java.util.Set;
+import java.util.function.Function;
 
-import io.pivotal.jira.JiraIssue;
 import org.eclipse.egit.github.core.Label;
+
 
 /**
  * @author Rossen Stoyanchev
  */
-public class BackportsLabelHandler implements LabelHandler {
+public class LabelFactories {
 
-	private static final Label label = LabelFactories.HAS_LABEL.apply("backports");
+	public static final Function<String, Label> TYPE_LABEL = name -> create("type: ", name, "c9c2f9");
 
-	private static final Set<String> labelSet = Collections.singleton(label.getName());
+	public static final Function<String, Label> STATUS_LABEL = name -> create("status: ", name, "f7e983");
+
+	public static final Function<String, Label> IN_LABEL = name -> create("in: ", name, "008672");
+
+	public static final Function<String, Label> HAS_LABEL = name -> create("has: ", name, "b8daf2");
 
 
-	@Override
-	public Set<Label> getAllLabels() {
-		return Collections.singleton(label);
+	private static Label create(String prefix, String labelName, String color) {
+		Label label = new Label();
+		label.setName(prefix + labelName);
+		label.setColor(color);
+		return label;
 	}
 
-	@Override
-	public Set<String> getLabelsFor(JiraIssue issue) {
-		return !issue.getBackportVersions().isEmpty() ? labelSet : Collections.emptySet();
-	}
 }

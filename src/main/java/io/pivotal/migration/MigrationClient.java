@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.pivotal.github;
+package io.pivotal.migration;
 
 import java.io.IOException;
 import java.net.HttpURLConnection;
@@ -32,8 +32,10 @@ import java.util.stream.Collectors;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
-import io.pivotal.LabelHandler;
-import io.pivotal.MilestoneFilter;
+import io.pivotal.github.GithubComment;
+import io.pivotal.github.GithubConfig;
+import io.pivotal.github.GithubIssue;
+import io.pivotal.github.ImportGithubIssue;
 import io.pivotal.jira.IssueLink;
 import io.pivotal.jira.JiraAttachment;
 import io.pivotal.jira.JiraComment;
@@ -91,9 +93,9 @@ import org.springframework.web.util.UriComponentsBuilder;
  */
 @Data
 @Component
-public class GithubClient {
+public class MigrationClient {
 
-	static final Logger logger = LogManager.getLogger(GithubClient.class);
+	static final Logger logger = LogManager.getLogger(MigrationClient.class);
 
 	private static final List<String> SUPPRESSED_LINK_TYPES = Arrays.asList("relates to", "is related to");
 
@@ -118,7 +120,7 @@ public class GithubClient {
 
 
 	@Autowired
-	public GithubClient(GithubConfig config, MarkupManager markup,
+	public MigrationClient(GithubConfig config, MarkupManager markup,
 			MilestoneFilter milestoneFilter, LabelHandler labelHandler) {
 
 		this.config = config;
@@ -644,7 +646,7 @@ public class GithubClient {
 					if (requestCallback != null) {
 						requestCallback.doWithRequest(request);
 					}
-					GithubClient.logger.debug("{} {} {}", method, url.getPath(), request.getHeaders());
+					MigrationClient.logger.debug("{} {} {}", method, url.getPath(), request.getHeaders());
 				};
 				return super.doExecute(url, method, decoratedRequestCallback, responseExtractor);
 			} catch(HttpClientErrorException e) {
@@ -653,14 +655,14 @@ public class GithubClient {
 				long sleep;
 				if(!"0".equals(headers.getFirst("X-RateLimit-Remaining"))) {
 					if(e.getResponseBodyAsString().contains("https://developer.github.com/v3/#abuse-rate-limits")) {
-						GithubClient.logger.info("Received https://developer.github.com/v3/#abuse-rate-limits with no indication of how long to wait. Let's guess & wait "+abuseSleepTimeInSeconds+ " seconds.");
+						MigrationClient.logger.info("Received https://developer.github.com/v3/#abuse-rate-limits with no indication of how long to wait. Let's guess & wait "+abuseSleepTimeInSeconds+ " seconds.");
 						sleep = TimeUnit.SECONDS.toMillis(abuseSleepTimeInSeconds);
 					} else {
-						GithubClient.logger.error(e.getResponseBodyAsString());
+						MigrationClient.logger.error(e.getResponseBodyAsString());
 						throw e;
 					}
 				} else {
-					GithubClient.logger.info("Received X-RateLimit-Reset. Waiting to do additional work");
+					MigrationClient.logger.info("Received X-RateLimit-Reset. Waiting to do additional work");
 					String reset = headers.getFirst("X-RateLimit-Reset");
 					Assert.notNull(reset, "No X-RateLimit-Reset: " + headers);
 					sleep = (1000 * Long.parseLong(reset)) - System.currentTimeMillis();
@@ -672,7 +674,7 @@ public class GithubClient {
 
 		@Override
 		protected void handleResponse(URI url, HttpMethod method, ClientHttpResponse response) throws IOException {
-			GithubClient.logger.debug("{} {X-RateLimit-Remaining:{}}",
+			MigrationClient.logger.debug("{} {X-RateLimit-Remaining:{}}",
 					response.getStatusCode(), response.getHeaders().getFirst("X-RateLimit-Remaining"));
 			super.handleResponse(url, method, response);
 		}
@@ -682,7 +684,7 @@ public class GithubClient {
 				return;
 			}
 			long endTime = System.currentTimeMillis() + sleep;
-			GithubClient.logger.debug("Sleeping until {}", new DateTime(endTime));
+			MigrationClient.logger.debug("Sleeping until {}", new DateTime(endTime));
 			for(long now = System.currentTimeMillis(); now < endTime; now = System.currentTimeMillis()) {
 				try {
 					Thread.sleep(sleep);
@@ -690,7 +692,7 @@ public class GithubClient {
 					// Ignore
 				}
 			}
-			GithubClient.logger.debug("Continuing");
+			MigrationClient.logger.debug("Continuing");
 		}
 	}
 

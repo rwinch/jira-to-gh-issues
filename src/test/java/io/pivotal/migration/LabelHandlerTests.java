@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.pivotal;
+package io.pivotal.migration;
 
 import java.util.Arrays;
 import java.util.Collections;
@@ -26,6 +26,8 @@ import io.pivotal.jira.JiraIssue;
 import io.pivotal.jira.JiraIssueType;
 import io.pivotal.jira.JiraResolution;
 import io.pivotal.jira.JiraStatus;
+import io.pivotal.migration.LabelHandler;
+import io.pivotal.migration.SprMigrationConfig;
 import org.junit.Test;
 
 import static org.junit.Assert.*;
