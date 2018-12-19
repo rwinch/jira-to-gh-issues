@@ -60,7 +60,7 @@ public class JiraIssue {
 	/** The list of versions the issue was backported to */
 	List<JiraFixVersion> backportVersions = Collections.emptyList();
 
-	int votes;
+	int votes = -1;
 
 	List<String> commitUrls;
 
@@ -72,9 +72,7 @@ public class JiraIssue {
 	}
 
 	public String getBrowserUrlFor(String key) {
-		return UriComponentsBuilder.fromHttpUrl(self)
-				.replacePath("/browse/").path(key).queryParam("redirect", "false")
-				.toUriString();
+		return UriComponentsBuilder.fromHttpUrl(self).replacePath("/browse/").path(key).toUriString();
 	}
 
 	public void initFixAndBackportVersions() {

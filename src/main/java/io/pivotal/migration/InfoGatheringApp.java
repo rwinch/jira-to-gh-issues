@@ -65,8 +65,7 @@ public class InfoGatheringApp {
 		JiraConfig config = new JiraConfig();
 		config.setBaseUrl("https://jira.spring.io");
 
-		JiraClient client = new JiraClient();
-		client.setJiraConfig(config);
+		JiraClient client = new JiraClient(config);
 		List<JiraIssue> issues = client.findIssues(TARGET_ISSUES_JQL);
 
 		System.out.println("\nLoaded " + issues.size() + " matching issues\n");

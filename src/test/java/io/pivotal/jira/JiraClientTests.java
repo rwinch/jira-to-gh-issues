@@ -39,7 +39,7 @@ public class JiraClientTests {
 		JiraConfig jiraConfig = new JiraConfig();
 		jiraConfig.setBaseUrl("https://jira.spring.io");
 		jiraConfig.setProjectId("SEC");
-		client = new JiraClient();
+		client = new JiraClient(jiraConfig);
 		client.setJiraConfig(jiraConfig);
 	}
 

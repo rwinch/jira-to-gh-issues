@@ -81,10 +81,10 @@ public class MarkdownEngine implements MarkupEngine {
 		text = text.replaceAll("\\{(code|noformat)(:(\\w+))?(?:(:|\\|)\\w+=.+?)*\\}","```$3 ");
 		text = text.replaceAll("(```\\w*) (.+)", "$1\n$2");
 		text = text.replaceAll("(.)(```) ", "$1\n$2");
-		text = text.replaceAll("\\[(.+?)\\|(http.*?)\\]","[$1]($2)");
+		text = text.replaceAll("\\[(.+?)\\|(http.*?)\\]","[$1]($2)"); // links
 		text = text.replaceAll("\\{\\{(.+?)\\}\\}","`$1`");
 		text = quote(text);
-		text = text.replaceAll("(?m)^[ \\t]*bq\\.", "> ");
+		text = text.replaceAll("(?m)^[ \\t]*bq\\.", "> "); // single line quotes
 		text = text.replaceAll("\\{(color)(:((#)?\\w+))?(?:(:|\\|)\\w+=.+?)*\\}","**");
 		text = escapeGithubStyleUserMentions(text);
 		text = replaceUserKeysInJiraMentions(text);

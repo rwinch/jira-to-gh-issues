@@ -33,7 +33,7 @@ import org.springframework.web.client.HttpClientErrorException;
  * @author Rob Winch
  * @see InfoGatheringApp
  */
-@SpringBootApplication
+@SpringBootApplication(scanBasePackages = "io.pivotal")
 public class MainApp implements CommandLineRunner {
 
 	@Autowired
@@ -74,6 +74,8 @@ public class MainApp implements CommandLineRunner {
 		List<JiraIssue> issues = jira.findIssuesVotesAndCommits(jiraConfig.getMigrateJql());
 
 		github.createIssues(issues);
+
+		System.exit(0);
 	}
 
 }
