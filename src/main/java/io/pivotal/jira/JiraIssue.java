@@ -49,22 +49,17 @@ public class JiraIssue {
 	Fields fields;
 
 
-	/**
-	 * The version to use as the "Milestone" on GitHub.
-	 * <p>Note that if the most recent fix version is a development version (i.e. M1, RC1, etc),
-	 * and the issue has backports, we'll skip over that use the latest GA version as the
-	 * Github milestone for the issue.
-	 */
+	/** Initialized via {@link #initFixAndBackportVersions()} **/
 	JiraFixVersion fixVersion;
 
-	/** The list of versions the issue was backported to */
+	/** Initialized via {@link #initFixAndBackportVersions()} **/
 	List<JiraFixVersion> backportVersions = Collections.emptyList();
 
+	/** Initialized via separate HTTP call to obtain votes for the issue */
 	int votes = -1;
 
+	/** Retrieved via separate HTTP call */
 	List<String> commitUrls;
-
-	String jiraBaseUrl;
 
 
 	public String getBrowserUrl() {
@@ -75,6 +70,14 @@ public class JiraIssue {
 		return UriComponentsBuilder.fromHttpUrl(self).replacePath("/browse/").path(key).toUriString();
 	}
 
+	/**
+	 * Invoke after an issue is loaded to determine the fix version to use as the
+	 * "Milestone" on GitHub, and from that also work out the list of backport versions.
+	 * <p>Note that if the most recent fix version is a development version,
+	 * i.e. M1, RC1, etc, and the issue has backports, we skip over the
+	 * development version, and use the latest GA version as the Github milestone
+	 * for the issue.
+	 */
 	public void initFixAndBackportVersions() {
 		List<JiraFixVersion> versions = new ArrayList<>(fields.getFixVersions());
 		versions.sort(JiraFixVersion.comparator());

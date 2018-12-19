@@ -25,7 +25,7 @@ import org.eclipse.egit.github.core.Label;
  */
 public class LabelFactories {
 
-	public static final Function<String, Label> TYPE_LABEL = name -> create("type: ", name, "c9c2f9");
+	public static final Function<String, Label> TYPE_LABEL = name -> create("type: ", name, "000000");
 
 	public static final Function<String, Label> STATUS_LABEL = name -> create("status: ", name, "f7e983");
 

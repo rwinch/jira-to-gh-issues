@@ -80,8 +80,9 @@ public class JiraClient {
 
 		List<JiraIssue> issues = new ArrayList<>();
 		Long startAt = 0L;
+		System.out.print("Page");
 		while(true) {
-			System.out.print("[" + startAt + "-" + (startAt + 1000) + "]");
+			System.out.print(" [" + startAt + "-" + (startAt + 1000) + "]");
 			JiraSearchResult searchResult = rest.getForObject(
 					getBaseUrl() + "/search?maxResults=1000&startAt={0}&jql={jql}&fields=" + JiraIssue.FIELD_NAMES,
 					JiraSearchResult.class, startAt, jql);
@@ -121,17 +122,13 @@ public class JiraClient {
 							.uri("/rest/api/2/issue/{id}/votes", issue.getId())
 							.retrieve()
 							.bodyToMono(MAP_TYPE)
-							.doOnCancel(() -> System.out.print("c1"))
 							.timeout(Duration.ofSeconds(10))
-							.doOnError(ex -> System.out.print("e1:" + ex.getMessage()))
 							.retry(3);
 					Mono<Map<String, Object>> commitsResult = webClient.get()
 							.uri("/rest/dev-status/1.0/issue/detail?issueId={id}&applicationType=github&dataType=repository", issue.getId())
 							.retrieve()
 							.bodyToMono(MAP_TYPE)
-							.doOnCancel(() -> System.out.print("c2"))
 							.timeout(Duration.ofSeconds(10))
-							.doOnError(ex -> System.out.print("e2:" + ex.getMessage()))
 							.retry(3);
 					return Mono.zip(Mono.just(issue), votesResult, commitsResult);
 				}, concurrency)

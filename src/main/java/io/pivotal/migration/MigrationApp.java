@@ -34,7 +34,7 @@ import org.springframework.web.client.HttpClientErrorException;
  * @see InfoGatheringApp
  */
 @SpringBootApplication(scanBasePackages = "io.pivotal")
-public class MainApp implements CommandLineRunner {
+public class MigrationApp implements CommandLineRunner {
 
 	@Autowired
 	JiraClient jira;
@@ -47,7 +47,7 @@ public class MainApp implements CommandLineRunner {
 
 
 	public static void main(String args[]) {
-		SpringApplication.run(MainApp.class);
+		SpringApplication.run(MigrationApp.class);
 	}
 
 
@@ -66,10 +66,10 @@ public class MainApp implements CommandLineRunner {
 
 		github.createRepository();
 
-		github.createLabels();
+//		github.createLabels();
 
-		JiraProject project = jira.findProject(jiraConfig.getProjectId());
-		github.createMilestones(project.getVersions());
+//		JiraProject project = jira.findProject(jiraConfig.getProjectId());
+//		github.createMilestones(project.getVersions());
 
 		List<JiraIssue> issues = jira.findIssuesVotesAndCommits(jiraConfig.getMigrateJql());
 

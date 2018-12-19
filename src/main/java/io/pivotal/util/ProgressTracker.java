@@ -39,20 +39,15 @@ public class ProgressTracker {
 
 
 	public ProgressTracker(int totalIterationsCount) {
-		this(totalIterationsCount, 10, 100);
-	}
-
-	public ProgressTracker(int totalIterationsCount, int iterationsPerDot, int dotsPerLine) {
 		this.totalIterationsCount = totalIterationsCount;
-		this.iterationsPerDot = iterationsPerDot;
-		this.dotsPerLine = dotsPerLine;
+		this.iterationsPerDot = totalIterationsCount > 100 ? 10 : 1;
+		this.dotsPerLine = totalIterationsCount > 100 ? 100 : 10;
 	}
 
 	public void updateForIteration() {
 		if (iteration++ == 0) {
 			this.startTime = LocalDateTime.now();
-			System.out.print("Tracking progress with " + iterationsPerDot + " iterations per \".\", " +
-					dotsPerLine + " dots per line\n");
+			System.out.print("++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++\n");
 			return;
 		}
 		Assert.notNull(startTime, "Please start with iteration 0 to initialize the startTime");
@@ -71,8 +66,8 @@ public class ProgressTracker {
 		BigDecimal remain = new BigDecimal(totalIterationsCount - iteration);
 		Duration remainDuration = Duration.ofMillis(remain.multiply(millisPerIteration).longValue());
 		return millisPerIteration + " millis per iteration" +
-				", remain: " + formatDuration(remainDuration) +
-				", elapsed: " + formatDuration(Duration.ofMillis(elapsed));
+				", Remain: " + formatDuration(remainDuration) +
+				", Elapsed: " + formatDuration(Duration.ofMillis(elapsed));
 	}
 
 	private String formatDuration(Duration remainingDuration) {
@@ -93,11 +88,10 @@ public class ProgressTracker {
 
 	public void stopProgress() {
 		if (this.startTime == null) {
-			System.out.println("Tracking never started");
 			return;
 		}
-		System.out.println(".x\nTotal time " + formatDuration(
-				Duration.ofMillis(ChronoUnit.MILLIS.between(this.startTime, LocalDateTime.now()))));
+		System.out.println(".X\nDone\n" + getStatus(iteration + 1) +
+				"\n++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++");
 		this.startTime = null;
 		this.iteration = 0;
 	}

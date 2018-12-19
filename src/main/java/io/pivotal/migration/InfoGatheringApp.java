@@ -39,21 +39,29 @@ import org.springframework.util.MultiValueMap;
 /**
  * Small utility to gather information from Jira to help prepare for the migration:
  *
- * <ul>
- * <li>Estimate how many backport issues would have to be created if each
- * backport is to be represented with a separate ticket.
- * <li>Generate a list of assignees from the Jira tickets, which can be used as an
+ * <p>Estimate how many backport issues would have to be created if each
+ * backport is to be represented with a separate ticket. Note that that question
+ * also depends on which version is chosen to the milestone for a ticket.
+ * For example given fix versions 5.1 RC2, 5.0.8, 4.3.19, picking 5.0.8 as the
+ * milestone as opposed to 5.1 RC2 results in a substantially lower number of
+ * backport issues (~2500 vs ~1000 for SPR with a total of 17K+ issues).
+ * See {@link JiraIssue#initFixAndBackportVersions()}.
+ *
+ * <p>Generate a list of assignees from the Jira tickets, which can be used as an
  * aid in filling out src/main/resources/jira-to-github-users.properties.
- * <li>Search uses of "@" that look like user mentions by checking against the
- * list of Jira users. The generated list can be further edited manually to filter
- * out anything that doesn't look like a person's name (e.g. @Bean), and paste the
- * result in src/main/resources/user-mentions-to-escape.txt so it can be escaped
- * as part of the migration. In reality everything prefixed with "@" is likely to
- * overlap with some GH user id but we can only do so much to avoid that, and if
- * your GH user id does not look like a person's name, then you're probably used
- * to random mentions. If anyone complains we can further edit the tickets that
- * have those mentions.
- * </ul>
+ *
+ * <p>Search uses of "@" that look like user mentions by checking against the
+ * list of Jira users. The generated list should be further edited manually to filter
+ * out anything that doesn't look like a person's name (e.g. @Bean), and pasted
+ * into src/main/resources/user-mentions-to-escape.txt so that such mentions can
+ * be escaped and avoid notifications to unrelated GitHub users. In reality
+ * anything prefixed with "@" is likely to collide with some GH user id but we
+ * can only do so much to avoid such noise, and if a GH user id does not look
+ * like a person's name, or is too short, then it's probably not uncommon to get
+ * mentioned by accident. If anyone complains we can further edit the tickets
+ * that have the mentions.
+ *
+ * @author Rossen Stoyanchev
  */
 public class InfoGatheringApp {
 
