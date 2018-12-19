@@ -41,6 +41,7 @@ import io.pivotal.github.GithubIssue;
 import io.pivotal.github.ImportGithubIssue;
 import io.pivotal.jira.JiraAttachment;
 import io.pivotal.jira.JiraComment;
+import io.pivotal.jira.JiraConfig;
 import io.pivotal.jira.JiraFixVersion;
 import io.pivotal.jira.JiraIssue;
 import io.pivotal.jira.JiraIssue.Fields;
@@ -100,8 +101,6 @@ public class MigrationClient {
 
 	private static final Logger logger = LogManager.getLogger(MigrationClient.class);
 
-	private static final Pattern sprKeyPattern = Pattern.compile("(SPR-[0-9]{1,5}+)");
-
 	private static final List<String> SUPPRESSED_LINK_TYPES = Arrays.asList("relates to", "is related to");
 
 	private static final ParameterizedTypeReference<Map<String, Object>> MAP_TYPE =
@@ -116,6 +115,10 @@ public class MigrationClient {
 
 	private final LabelHandler labelHandler;
 
+	/** Used to replace Jira issue keys that appear in comments with links */
+	private final Pattern jiraIssueKeyPattern;
+
+	/** For assignees */
 	Map<String, String> jiraToGithubUsername;
 
 	private final ExtendedRestTemplate rest = new ExtendedRestTemplate();
@@ -130,13 +133,14 @@ public class MigrationClient {
 
 
 	@Autowired
-	public MigrationClient(GithubConfig config, MarkupManager markup,
+	public MigrationClient(GithubConfig config, JiraConfig jiraConfig, MarkupManager markup,
 			MilestoneFilter milestoneFilter, LabelHandler labelHandler) {
 
 		this.config = config;
 		this.markup = markup;
 		this.milestoneFilter = milestoneFilter;
 		this.labelHandler = labelHandler;
+		this.jiraIssueKeyPattern = Pattern.compile("(" + jiraConfig.getProjectId() + "-[0-9]{1,5}+)");
 		this.repositoryIdProvider = RepositoryId.createFromId(this.config.getRepositorySlug());
 		this.importRequestBuilder = initImportRequestBuilder();
 	}
@@ -205,7 +209,9 @@ public class MigrationClient {
 		MilestoneService milestones = new MilestoneService(this.client);
 		versions = versions.stream().filter(milestoneFilter).collect(Collectors.toList());
 		logger.info("Creating {} milestones", versions.size());
+		ProgressTracker tracker = new ProgressTracker(versions.size(), logger.isDebugEnabled());
 		for (JiraVersion version : versions) {
+			tracker.updateForIteration();
 			Milestone milestone = new Milestone();
 			milestone.setTitle(version.getName());
 			milestone.setState(version.isReleased() ? "closed" : "open");
@@ -214,16 +220,20 @@ public class MigrationClient {
 			}
 			milestones.createMilestone(repositoryIdProvider, milestone);
 		}
+		tracker.stopProgress();
 	}
 
 	public void createLabels() throws IOException {
 		LabelService labelService = new LabelService(this.client);
 		Set<Label> labels = labelHandler.getAllLabels();
 		logger.info("Creating labels: {}", labels);
+		ProgressTracker tracker = new ProgressTracker(labels.size(), logger.isDebugEnabled());
 		for (Label label : labels) {
+			tracker.updateForIteration();
 			logger.debug("Creating label: \"{}\"", label.getName());
 			labelService.createLabel(repositoryIdProvider, label);
 		}
+		tracker.stopProgress();
 	}
 
 
@@ -231,63 +241,104 @@ public class MigrationClient {
 
 	public void createIssues(List<JiraIssue> issues) throws IOException {
 
-		this.markup.configureUserLookup(scrapeUsers(issues));
+		File mappingsFile = new File("spr-mappings.csv");
+		File failuresFile = new File("spr-failures.txt");
+		mappingsFile.delete();
+		failuresFile.delete();
 
-		logger.info("Loading list of milestones");
-		Map<String, Milestone> milestones = new MilestoneService(this.client)
-				.getMilestones(repositoryIdProvider, "all")
-				.stream()
-				.collect(Collectors.toMap(Milestone::getTitle, Function.identity()));
+		try (FileWriter successWriter = new FileWriter(mappingsFile, true);
+			 FileWriter failWriter = new FileWriter(failuresFile, true)) {
 
-		logger.info("Preparing issues to import: wiki to markdown, labels, Jira details, etc.");
-		List<ImportGithubIssue> issuesToImport = issues.stream()
-				.map(jiraIssue -> {
-					ImportGithubIssue issueToImport = new ImportGithubIssue();
-					issueToImport.setIssue(initGithubIssue(jiraIssue, milestones));
-					issueToImport.setComments(initComments(jiraIssue));
-					return issueToImport;
-				})
-				.collect(Collectors.toList());
 
-		logger.info("Import issues");
-		Map<String,ImportedIssue> importedIssues = new HashMap<>(issues.size());
-		ProgressTracker tracker = new ProgressTracker(issues.size());
-		for (int i = 0, issuesSize = issues.size(); i < issuesSize; i++) {
-			tracker.updateForIteration();
-			JiraIssue jiraIssue = issues.get(i);
-			ImportGithubIssue issueToImport = issuesToImport.get(i);
-			ImportGithubIssueResponse importResponse = executeIssueImport(issueToImport);
-			importedIssues.put(jiraIssue.getKey(), new ImportedIssue(jiraIssue, importResponse));
-			if ((i % 100 == 0 && i != 0) || importResponse == null) {
-				String failures = checkFailures(importedIssues);
-				if (!failures.isEmpty()) {
-					logger.error("Detected failures. Halting import.");
-					break;
+			logger.info("Loading list of milestones and collecting list of users from all issues");
+			this.markup.configureUserLookup(scrapeUsers(issues));
+			Map<String, Milestone> milestones = new MilestoneService(this.client)
+					.getMilestones(repositoryIdProvider, "all")
+					.stream()
+					.collect(Collectors.toMap(Milestone::getTitle, Function.identity()));
+
+
+			logger.info("Preparing issues data to import: wiki to markdown, labels, Jira details, etc.");
+			List<ImportGithubIssue> issuesToImport = issues.stream()
+					.map(jiraIssue -> {
+						ImportGithubIssue issueToImport = new ImportGithubIssue();
+						issueToImport.setIssue(initGithubIssue(jiraIssue, milestones));
+						issueToImport.setComments(initComments(jiraIssue));
+						return issueToImport;
+					})
+					.collect(Collectors.toList());
+
+
+
+			logger.info("Starting to import issues");
+			ProgressTracker tracker1 = new ProgressTracker(issues.size(), logger.isDebugEnabled());
+			List<ImportedIssue> importedIssues = new ArrayList<>(issues.size());
+			for (int i = 0, issuesSize = issues.size(); i < issuesSize; i++) {
+				tracker1.updateForIteration();
+				JiraIssue jiraIssue = issues.get(i);
+				ImportGithubIssue issueToImport = issuesToImport.get(i);
+				ImportGithubIssueResponse importResponse = executeIssueImport(issueToImport);
+				importedIssues.add(new ImportedIssue(jiraIssue, importResponse));
+				// Start checking issues imported 50 iterations/seconds ago,
+				// i.e. long enough to avoid "pending" status but soon enough for early detection of failure.
+				if (i > 50) {
+					if (!checkImportResult(importedIssues.get(i - 50), successWriter, failWriter)) {
+						logger.error("Detected import failure for " + jiraIssue.getKey());
+						break;
+					}
 				}
 			}
-		}
-		tracker.stopProgress();
-		logger.info("Checking for failures from import");
-		String failures = checkFailures(importedIssues);
-		String mappings = gatherMappings(importedIssues);
-		writeMappingsAndFailures(mappings, failures);
-		if (failures.isEmpty()) {
-			return;
-		}
-		logger.info("Imported {} issues", issues.size());
+			tracker1.stopProgress();
+			logger.info("Checking remaining import results (this could take up to 50 secs)");
+			importedIssues.forEach(issue -> checkImportResult(issue, successWriter, failWriter));
+			long failCount = importedIssues.stream()
+					.filter(issue -> !checkImportResult(issue, successWriter, failWriter))
+					.count();
+			if (failCount != 0) {
+				long successCount = importedIssues.stream()
+						.filter(issue -> checkImportResult(issue, successWriter, failWriter)).count();
+				logger.error(successCount + " successful imports, and " + failCount + " failures of " + issues.size());
+				return;
+			}
+			logger.info("All issues imported successfully");
 
-		MultiValueMap<Milestone, ImportedIssue> backportMap = groupBackportsByMilestone(importedIssues, milestones);
-		logger.info("Creating backport holder issues for {} milestones", backportMap.size());
-		backportMap.keySet().forEach(milestone -> {
-			logger.debug(milestone.getTitle());
-			GithubIssue ghIssue = initMilestoneBackportIssue(milestone, backportMap.get(milestone));
-			ImportGithubIssue toImport = new ImportGithubIssue();
-			toImport.setIssue(ghIssue);
-			executeIssueImport(toImport);
-			// TODO: these need to be verified too
-		});
 
-		logger.info("Done with migration.");
+
+			logger.info("Creating backport issue holders");
+			MultiValueMap<Milestone, ImportedIssue> backportMap = groupBackportsByMilestone(importedIssues, milestones);
+			if (backportMap.isEmpty()) {
+				logger.info("There are 0 backports");
+				return;
+			}
+			List<ImportedIssue> backportIssues = new ArrayList<>(backportMap.size());
+			ProgressTracker tracker2 = new ProgressTracker(backportIssues.size(), logger.isDebugEnabled());
+			backportMap.keySet().forEach(milestone -> {
+				tracker2.updateForIteration();
+				GithubIssue ghIssue = initMilestoneBackportIssue(milestone, backportMap.get(milestone));
+				ImportGithubIssue toImport = new ImportGithubIssue();
+				toImport.setIssue(ghIssue);
+				ImportGithubIssueResponse importResponse = executeIssueImport(toImport);
+				backportIssues.add(new ImportedIssue(null, importResponse));
+			});
+			tracker2.stopProgress();
+			logger.info("Checking created backport issues");
+			ProgressTracker tracker3 = new ProgressTracker(backportIssues.size(), logger.isDebugEnabled());
+			backportIssues.forEach(importedIssue -> {
+				tracker3.updateForIteration();
+				checkImportResult(importedIssue, successWriter, failWriter);
+			});
+			tracker3.stopProgress();
+			failCount = backportIssues.stream()
+					.filter(issue -> !checkImportResult(issue, successWriter, failWriter))
+					.count();
+			if (failCount != 0) {
+				logger.error("Failed to create " + failCount + " backport issues");
+				return;
+			}
+
+
+			logger.info("All backport issues created successfully");
+		}
 	}
 
 	private Map<String, JiraUser> scrapeUsers(List<JiraIssue> issues) {
@@ -360,7 +411,7 @@ public class MigrationClient {
 	}
 
 	private String replaceSprKeys(String text, MarkupEngine engine, JiraIssue issue) {
-		Matcher matcher = sprKeyPattern.matcher(text);
+		Matcher matcher = jiraIssueKeyPattern.matcher(text);
 		StringBuffer sb = new StringBuffer();
 		while (matcher.find()) {
 			String key = matcher.group(1);
@@ -386,9 +437,9 @@ public class MigrationClient {
 						String contentUrl = attachment.getContent();
 						String filename = attachment.getFilename();
 						String size = attachment.getSizeToDisplay();
-						return engine.link(filename, contentUrl) + " (_" + size + "_)";
+						return "- " + engine.link(filename, contentUrl) + " (_" + size + "_)";
 					})
-					.collect(Collectors.joining("\n", "\n**Attachment" + (multiLine ? "s:**\n" : ":** "), "\n"));
+					.collect(Collectors.joining("\n", "\n**Attachments:**\n", "\n"));
 		}
 		if (parent != null) {
 			String key = parent.getKey();
@@ -399,7 +450,7 @@ public class MigrationClient {
 					.map(subtask -> {
 						String key = subtask.getKey();
 						String browserUrl = issue.getBrowserUrlFor(key);
-						return engine.link(key, browserUrl) + " " + subtask.getFields().getSummary();
+						return "- " + engine.link(key, browserUrl) + " " + subtask.getFields().getSummary();
 					})
 					.collect(Collectors.joining("\n", "\n**Sub-tasks:**\n", "\n"));
 		}
@@ -420,22 +471,25 @@ public class MigrationClient {
 							linkType = link.getType().getInward();
 							title = link.getInwardIssue().getFields().getSummary();
 						}
-						return engine.link(key, issue.getBrowserUrlFor(key)) + " " + title +
+						return "- " + engine.link(key, issue.getBrowserUrlFor(key)) + " " + title +
 								(!SUPPRESSED_LINK_TYPES.contains(linkType) ? " (_**\"" + linkType + "\"**_)" : "");
 					})
 					.collect(Collectors.joining("\n", "\n**Issue Links:**\n", "\n"));
 		}
 		List<String> references = new ArrayList<>();
 		if (fields.getPullRequestUrl() != null) {
-			references.add(fields.getPullRequestUrl());
+			// Avoid inserting links to actual pull requests while in testing mode since
+			// that generates events in the timeline of the pull requests, e.g.
+			// https://github.com/spring-projects/spring-framework/pull/1997
+			if (!getConfig().isDeleteCreateRepositorySlug()) {
+				references.add("pull request " + fields.getPullRequestUrl());
+			}
 		}
 		if (!issue.getCommitUrls().isEmpty()) {
-			references.add(String.join(", ", issue.getCommitUrls()));
+			references.add(issue.getCommitUrls().stream().collect(Collectors.joining(", ", "commits ", "")));
 		}
 		if (!references.isEmpty()) {
-			boolean multiLine = references.size() > 1;
-			jiraDetails += references.stream().collect(
-					Collectors.joining("\n", "\n**Referenced From:**" + (multiLine ? "\n" : " "), "\n"));
+			jiraDetails += references.stream().collect(Collectors.joining(", and ", "\n**Referenced from:** ", "\n"));
 		}
 		if (!issue.getBackportVersions().isEmpty()) {
 			jiraDetails += issue.getBackportVersions().stream().map(JiraFixVersion::getName)
@@ -501,86 +555,89 @@ public class MigrationClient {
 		return null;
 	}
 
-	private String checkFailures(Map<String, ImportedIssue> importedIssues) {
-		return importedIssues.values().stream()
-				.filter(importedIssue -> !checkImportResult(importedIssue))
-				.map(importedIssue -> importedIssue.jiraIssue.getKey() + " [" + importedIssue.getFailure() + "]")
-				.collect(Collectors.joining("\n"));
-	}
+	private boolean checkImportResult(
+			ImportedIssue importedIssue, FileWriter mappingsWriter, FileWriter failuresWriter) {
 
-	private boolean checkImportResult(ImportedIssue importedIssue) {
 		if(importedIssue.getIssueNumber() != null) {
 			return true;
 		}
-		if(importedIssue.getFailure() != null) {
+		if (importedIssue.getFailure() != null) {
 			return false;
 		}
-		if (importedIssue.getImportResponse() == null) {
-			importedIssue.setFailure("No body from import request");
-			return false;
+		JiraIssue jiraIssue = importedIssue.getJiraIssue();
+		try {
+			if (importedIssue.getImportResponse() == null) {
+				importedIssue.setFailure("No body from import request");
+				return false;
+			}
+			String importIssuesUrl = importedIssue.getImportResponse().getUrl();
+			URI uri = UriComponentsBuilder.fromUriString(importIssuesUrl).build().toUri();
+			RequestEntity<Void> request = RequestEntity.get(uri)
+					.accept(new MediaType("application", "vnd.github.golden-comet-preview+json"))
+					.header("Authorization", "token " + this.config.getAccessToken())
+					.build();
+			while (true) {
+				Map<String, Object> body = rest.exchange(request, MAP_TYPE).getBody();
+				if (body == null) {
+					importedIssue.setFailure("No body from import result request");
+					return false;
+				}
+				String url = (String) body.get("issue_url");
+				String status = (String) body.get("status");
+				if ("failed".equals(status)) {
+					importedIssue.setFailure("status: " + body);
+					return false;
+				}
+				else if ("pending".equals(status)) {
+					logger.debug("{} import still pending. Waiting 1 second",
+							jiraIssue != null ? jiraIssue.getKey() : importedIssue.getImportResponse().getUrl());
+					waitForAtLeastOneSecondBetweenRequests();
+					continue;
+				}
+				if (url == null) {
+					importedIssue.setFailure("No URL for imported issue: " + body);
+					return false;
+				}
+				UriComponents parts = UriComponentsBuilder.fromUriString(url).build();
+				List<String> segments = parts.getPathSegments();
+				int issueNumber = Integer.parseInt(segments.get(segments.size() - 1));
+				importedIssue.setIssueNumber(issueNumber);
+				return true;
+			}
 		}
-		String importIssuesUrl = importedIssue.getImportResponse().getUrl();
-		URI uri = UriComponentsBuilder.fromUriString(importIssuesUrl).build().toUri();
-		RequestEntity<Void> request = RequestEntity.get(uri)
-				.accept(new MediaType("application", "vnd.github.golden-comet-preview+json"))
-				.header("Authorization", "token " + this.config.getAccessToken())
-				.build();
-		while(true) {
-			Map<String, Object> body = rest.exchange(request, MAP_TYPE).getBody();
-			if (body == null) {
-				importedIssue.setFailure("No body from import result request");
-				return false;
+		finally {
+			if (importedIssue.getIssueNumber() != null) {
+				if (jiraIssue != null) {
+					String line = jiraIssue.getKey() + "," + importedIssue.getIssueNumber() + "\n";
+					try {
+						mappingsWriter.write(line);
+						mappingsWriter.flush();
+					}
+					catch (IOException ex) {
+						logger.error("Failed to write import result {}:\n{}", ex.getMessage(), line);
+					}
+				}
 			}
-			String url = (String) body.get("issue_url");
-			String status = (String) body.get("status");
-			if ("failed".equals(status)) {
-				importedIssue.setFailure("status: " + body);
-				return false;
-			}
-			else if ("pending".equals(status)) {
-				logger.debug("{} import still pending. Waiting 1 second", importedIssue.getJiraIssue().getKey());
+			else {
+				String line = "\n" +
+						(jiraIssue != null ? jiraIssue.getKey() : importedIssue.getImportResponse().getUrl()) +
+						" [" + importedIssue.getFailure() + "]\n";
 				try {
-					Thread.sleep(1000);
+					failuresWriter.write(line);
+					failuresWriter.flush();
 				}
-				catch (InterruptedException e) {
-					// Ignore
+				catch (IOException ex) {
+					logger.error("Failed to write import result {}:\n{}", ex.getMessage(), line);
 				}
-				continue;
 			}
-			Assert.notNull(url, "No URL for imported issue: " + body);
-			UriComponents parts = UriComponentsBuilder.fromUriString(url).build();
-			List<String> segments = parts.getPathSegments();
-			int issueNumber = Integer.parseInt(segments.get(segments.size() - 1));
-			importedIssue.setIssueNumber(issueNumber);
-			return true;
 		}
-	}
-
-	private String gatherMappings(Map<String, ImportedIssue> importedIssues) {
-		return importedIssues.values().stream()
-				.filter(this::checkImportResult)
-				.map(importedIssue -> importedIssue.getJiraIssue().getKey() + "," + importedIssue.getIssueNumber())
-				.collect(Collectors.joining("\n"));
-	}
-
-	private void writeMappingsAndFailures(String mappings, String failures) throws IOException {
-		File file = new File ("spr-mappings.csv");
-		FileWriter writer = new FileWriter(file, false);
-		writer.write(mappings);
-		writer.flush();
-		writer.close();
-		file = new File ("spr-failures.txt");
-		writer = new FileWriter(file, false);
-		writer.write(failures);
-		writer.flush();
-		writer.close();
 	}
 
 	private MultiValueMap<Milestone, ImportedIssue> groupBackportsByMilestone(
-			Map<String, ImportedIssue> importedIssues, Map<String, Milestone> milestones) {
+			List<ImportedIssue> importedIssues, Map<String, Milestone> milestones) {
 
 		MultiValueMap<Milestone, ImportedIssue> backportMap = new LinkedMultiValueMap<>();
-		for (ImportedIssue importedIssue : importedIssues.values()) {
+		for (ImportedIssue importedIssue : importedIssues) {
 			for (JiraFixVersion version : importedIssue.getJiraIssue().getBackportVersions()) {
 				Milestone milestone = milestones.get(version.getName());
 				// TODO: shouldn't there be a milestone for *any* backport version?
