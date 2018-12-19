@@ -37,14 +37,28 @@ public class ProgressTracker {
 
 	private int iteration = 0;
 
+	private boolean suppressTracking;
 
-	public ProgressTracker(int totalIterationsCount) {
+
+	public ProgressTracker(int totalIterationsCount, boolean isDebugLoggingEnabled) {
 		this.totalIterationsCount = totalIterationsCount;
 		this.iterationsPerDot = totalIterationsCount > 100 ? 10 : 1;
 		this.dotsPerLine = totalIterationsCount > 100 ? 100 : 10;
+		this.suppressTracking = isDebugLoggingEnabled;
 	}
 
+	public ProgressTracker(int totalIterationsCount, int iterationsPerDot, int dotsPerLine, boolean isDebugLoggingEnabled) {
+		this.totalIterationsCount = totalIterationsCount;
+		this.iterationsPerDot = iterationsPerDot;
+		this.dotsPerLine = dotsPerLine;
+		this.suppressTracking = isDebugLoggingEnabled;
+	}
+
+
 	public void updateForIteration() {
+		if (this.suppressTracking) {
+			return;
+		}
 		if (iteration++ == 0) {
 			this.startTime = LocalDateTime.now();
 			System.out.print("++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++\n");
@@ -87,10 +101,10 @@ public class ProgressTracker {
 	}
 
 	public void stopProgress() {
-		if (this.startTime == null) {
+		if (this.startTime == null || this.suppressTracking) {
 			return;
 		}
-		System.out.println(".X\nDone\n" + getStatus(iteration + 1) +
+		System.out.println(".X\nDone\n" + getStatus(iteration) +
 				"\n++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++");
 		this.startTime = null;
 		this.iteration = 0;

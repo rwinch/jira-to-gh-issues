@@ -19,6 +19,7 @@ package io.pivotal.jira;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.jodatime.api.Assertions.assertThat;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -37,16 +38,33 @@ public class JiraClientTests {
 	@Before
 	public void setup() {
 		JiraConfig jiraConfig = new JiraConfig();
-		jiraConfig.setBaseUrl("https://jira.spring.io");
+		jiraConfig.setBaseUrl("https://jira-stage.spring.io");
 		jiraConfig.setProjectId("SEC");
 		client = new JiraClient(jiraConfig);
 		client.setJiraConfig(jiraConfig);
 	}
 
 	@Test
-	public void findAll() {
+	public void findAllSec() {
 		List<JiraIssue> issues = client.findIssues("project = SEC");
 		assertThat(issues.size()).isGreaterThanOrEqualTo(3138);
+	}
+
+	@Test
+	public void findAllSpr() {
+		JiraConfig jiraConfig = new JiraConfig();
+		jiraConfig.setProjectId("SPR");
+		List<JiraIssue> issues = client.findIssues(jiraConfig.getMigrateJql());
+		assertThat(issues.size()).isGreaterThanOrEqualTo(16000);
+		List<String> pairs = new ArrayList<>();
+		for (int i=1; i < issues.size(); i++) {
+			String keyA = issues.get(i - 1).getKey();
+			String keyB = issues.get(i).getKey();
+			if (Long.parseLong(keyA.substring("SPR-".length())) > Long.parseLong(keyB.substring("SPR-".length()))) {
+				pairs.add(keyA + "-" + keyB);
+			}
+		}
+		assertThat(pairs).isEmpty();
 	}
 
 	@Test

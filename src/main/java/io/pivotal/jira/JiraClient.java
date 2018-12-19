@@ -16,8 +16,8 @@
 package io.pivotal.jira;
 
 import java.time.Duration;
-import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -31,7 +31,6 @@ import reactor.core.publisher.Mono;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.ParameterizedTypeReference;
-import org.springframework.http.HttpMethod;
 import org.springframework.stereotype.Component;
 import org.springframework.util.Assert;
 import org.springframework.web.client.RestOperations;
@@ -46,10 +45,18 @@ import org.springframework.web.reactive.function.client.WebClient;
 @Component
 public class JiraClient {
 
-	private static final Logger logger = LogManager.getLogger(JiraClient.class);
+	/**
+	 * The max number of issues expected in the Jira project. It should be some reasonably high number,
+	 * so all issues will be fetched, in multiples of 1000. This is necessary because we don't
+	 * politely fetch one page at a time, but rather get 5 at a time concurrently. This number gives
+	 * a hint where to stop so we avoid running into a bunch of 400 errors before realizing to stop.
+	 */
+	public static final int DEFAULT_MAX_ISSUE_COUNT = 20000;
 
 	private static final ParameterizedTypeReference<Map<String, Object>> MAP_TYPE =
 			new ParameterizedTypeReference<Map<String, Object>>() {};
+
+	private static final Logger logger = LogManager.getLogger(JiraClient.class);
 
 
 	JiraConfig jiraConfig;
@@ -75,48 +82,47 @@ public class JiraClient {
 	}
 
 	public List<JiraIssue> findIssues(String jql) {
+		return findIssues(jql, 5, DEFAULT_MAX_ISSUE_COUNT).collectList().block();
+	}
 
+	public Flux<JiraIssue> findIssues(String jql, int concurrency, int maxIssues) {
+		int pageSize = 1000;
 		logger.info("Loading issues, query: \"{}\"", jql);
+		return Flux.range(0, maxIssues / 1000)
+				.flatMap(page -> {
+					int startAt = page * pageSize;
+					System.out.print("[" + startAt + "-" + (startAt + 1000) + "]");
+					return webClient.get()
+							.uri("/rest/api/2/search?maxResults=1000&startAt={0}&jql={jql}&fields=" + JiraIssue.FIELD_NAMES, startAt, jql)
+							.retrieve()
+							.bodyToMono(JiraSearchResult.class)
+							.onErrorResume(ex -> {
+								logger.error("page " + page + ": " + ex.getMessage(), ex);
+								return Mono.empty();
+							});
 
-		List<JiraIssue> issues = new ArrayList<>();
-		Long startAt = 0L;
-		System.out.print("Page");
-		while(true) {
-			System.out.print(" [" + startAt + "-" + (startAt + 1000) + "]");
-			JiraSearchResult searchResult = rest.getForObject(
-					getBaseUrl() + "/search?maxResults=1000&startAt={0}&jql={jql}&fields=" + JiraIssue.FIELD_NAMES,
-					JiraSearchResult.class, startAt, jql);
-			issues.addAll(searchResult.getIssues());
-			startAt = searchResult.getNextStartAt();
-			if (startAt == null) {
-				System.out.println("");
-				break;
-			}
-		}
-
-		logger.info("{} issues loaded ", issues.size());
-
-		issues.forEach(JiraIssue::initFixAndBackportVersions);
-		return issues;
+				}, concurrency)
+				.doOnNext(result -> result.getIssues().forEach(JiraIssue::initFixAndBackportVersions))
+				.doOnComplete(() -> System.out.println("\nDone"))
+				.sort(Comparator.comparingLong(JiraSearchResult::getStartAt))
+				.concatMapIterable(JiraSearchResult::getIssues);
 	}
 
 	public List<JiraIssue> findIssuesVotesAndCommits(String jql) {
-		List<JiraIssue> issues = findIssues(jql);
-		logger.info("Loading votes and commits for {} issues", issues.size());
-		populateVotesAndCommitsConcurrent(issues, 10);
-//		populateVotesAndCommitsSequential(issues);
-		verify(issues);
-		return issues;
+		return findIssues(jql, 5, DEFAULT_MAX_ISSUE_COUNT)
+				.collectList()
+				.flatMap(issues -> populateVotesAndCommits(issues, 10).then(Mono.just(issues)))
+				.block();
 	}
 
 	/**
 	 * @issues the issues to populate
 	 * @param concurrency how many issues to fetch data for concurrently. Actual concurrency
-	 * for the server is x 2 since we fire two calls (votes and commits) per iteration
 	 */
-	private void populateVotesAndCommitsConcurrent(List<JiraIssue> issues, int concurrency) {
-		ProgressTracker tracker = new ProgressTracker(issues.size());
-		Flux.fromIterable(issues)
+	private Mono<Void> populateVotesAndCommits(List<JiraIssue> issues, int concurrency) {
+		logger.info("Loading votes and commits for {} issues", issues.size());
+		ProgressTracker tracker = new ProgressTracker(issues.size(), 100, 1000, logger.isDebugEnabled());
+		return Flux.fromIterable(issues)
 				.flatMap(issue -> {
 					Mono<Map<String, Object>> votesResult = webClient.get()
 							.uri("/rest/api/2/issue/{id}/votes", issue.getId())
@@ -137,25 +143,11 @@ public class JiraClient {
 					tuple.getT1().setCommitUrls(extractCommits(tuple.getT3()));
 					tracker.updateForIteration();
 				})
-				.doOnComplete(tracker::stopProgress)
-				.blockLast();
-	}
-
-	private void populateVotesAndCommitsSequential(List<JiraIssue> issues) {
-		ProgressTracker tracker = new ProgressTracker(issues.size());
-		for (JiraIssue issue : issues) {
-			tracker.updateForIteration();
-
-			String url = getBaseUrl() + "/issue/{id}/votes";
-			Map<String, Object> result = rest.exchange(url, HttpMethod.GET, null, MAP_TYPE, issue.getId()).getBody();
-			issue.setVotes((int) result.get("votes"));
-
-			// No official API, below is the URL used in the browser
-			url = jiraConfig.getBaseUrl() + "/rest/dev-status/1.0/issue/detail?issueId={id}&applicationType=github&dataType=repository";
-			result = rest.exchange(url, HttpMethod.GET, null, MAP_TYPE, issue.getId()).getBody();
-			issue.setCommitUrls(extractCommits(result));
-		}
-		tracker.stopProgress();
+				.doOnComplete(() -> {
+					tracker.stopProgress();
+					verify(issues);
+				})
+				.then();
 	}
 
 	@SuppressWarnings("unchecked")
