@@ -26,8 +26,6 @@ import io.pivotal.jira.JiraIssue;
 import io.pivotal.jira.JiraIssueType;
 import io.pivotal.jira.JiraResolution;
 import io.pivotal.jira.JiraStatus;
-import io.pivotal.migration.LabelHandler;
-import io.pivotal.migration.SprMigrationConfig;
 import org.junit.Test;
 
 import static org.junit.Assert.*;
@@ -124,10 +122,10 @@ public class LabelHandlerTests {
 		jiraIssue.setFields(fields);
 		jiraIssue.initFixAndBackportVersions();
 
-		jiraIssue.setVotes(0);
+		jiraIssue.setVotes(9);
 		assertEquals(Collections.emptySet(), labelHandler.getLabelsFor(jiraIssue));
 
-		jiraIssue.setVotes(1);
+		jiraIssue.setVotes(10);
 		assertEquals(Collections.singleton("has: votes-jira"), labelHandler.getLabelsFor(jiraIssue));
 	}
 

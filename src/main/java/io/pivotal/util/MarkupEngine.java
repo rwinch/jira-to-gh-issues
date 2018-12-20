@@ -43,4 +43,6 @@ public interface MarkupEngine {
 	String link(String text, String href);
 
 	String convert(String text);
+
+	String convertBackportIssueSummary(String text);
 }

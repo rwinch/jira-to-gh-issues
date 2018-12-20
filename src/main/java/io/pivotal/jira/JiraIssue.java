@@ -18,6 +18,8 @@ package io.pivotal.jira;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
@@ -79,13 +81,37 @@ public class JiraIssue {
 	 * for the issue.
 	 */
 	public void initFixAndBackportVersions() {
+		initFixAndBackportVersions(Collections.emptyMap());
+	}
+
+	/**
+	 * A variant of {@link #initFixAndBackportVersions()} that takes a list of
+	 * all fully initialized issues. This is necessary because sub-tasks of type "Backport"
+	 * returned on the parent task ticket do not list details such as fixVersions.
+	 */
+	public void initFixAndBackportVersions(Map<String, JiraIssue> backportSubtasks) {
+
 		List<JiraFixVersion> versions = new ArrayList<>(fields.getFixVersions());
+
+		// SPR has some history (circa 2013) with sub-tasks of type "Backport"
+		// Let's aggregate the fix versions from those backport issues into the parent task
+		// so that backport issue holders will correctly refer to all backports.
+		for (JiraIssue subtask : fields.getSubtasks()) {
+			String key = subtask.getKey();
+			if (backportSubtasks.containsKey(key)) {
+				versions.addAll(backportSubtasks.get(key).getFields().getFixVersions());
+			}
+		}
+
 		versions.sort(JiraFixVersion.comparator());
-		if (versions.size() > 1 && versions.get(0).isMilestoneOrReleaseCandidate()) {
+		if (versions.size() > 1 && versions.get(0).isBeforeGA()) {
 			versions.remove(0);
 		}
+
 		fixVersion = versions.isEmpty() ? null : versions.get(0);
-		backportVersions = versions.size() > 1 ? versions.subList(1, versions.size()) : Collections.emptyList();
+		backportVersions = versions.size() > 1 ?
+				versions.subList(1, versions.size()).stream().filter(v -> !v.isBeforeGA()).collect(Collectors.toList()) :
+				Collections.emptyList();
 	}
 
 

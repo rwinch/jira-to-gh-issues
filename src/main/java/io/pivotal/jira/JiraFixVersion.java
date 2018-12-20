@@ -33,7 +33,7 @@ import lombok.NoArgsConstructor;
 public class JiraFixVersion {
 	String name;
 
-	public boolean isMilestoneOrReleaseCandidate() {
+	public boolean isBeforeGA() {
 		return name.matches(".* RC[1-9]") || name.matches(".* M[1-9]");
 	}
 

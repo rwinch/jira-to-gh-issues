@@ -124,6 +124,18 @@ public class MarkdownEngine implements MarkupEngine {
 		return user;
 	}
 
+	@Override
+	public String convertBackportIssueSummary(String text) {
+		Matcher matcher = ghMentionPattern.matcher(text);
+		StringBuffer sb = new StringBuffer();
+		while (matcher.find()) {
+			String key = matcher.group(2);
+			matcher.appendReplacement(sb, matcher.group(1) + "`" + key + "`");
+		}
+		matcher.appendTail(sb);
+		return sb.toString();
+	}
+
 	public String header(String text) {
 		text = text.replaceAll("(?m)^h1. ", "# ");
 		text = text.replaceAll("(?m)^h2. ", "## ");

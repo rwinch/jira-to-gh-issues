@@ -57,11 +57,12 @@ public class ProgressTracker {
 
 	public void updateForIteration() {
 		if (this.suppressTracking) {
+			// Skip
 			return;
 		}
 		if (iteration++ == 0) {
 			this.startTime = LocalDateTime.now();
-			System.out.print("++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++\n");
+			System.out.print("=== Tracking with " + iterationsPerDot + " iterations per dot\n");
 			return;
 		}
 		Assert.notNull(startTime, "Please start with iteration 0 to initialize the startTime");
@@ -102,10 +103,11 @@ public class ProgressTracker {
 
 	public void stopProgress() {
 		if (this.startTime == null || this.suppressTracking) {
+			// Skip
 			return;
 		}
-		System.out.println(".X\nDone\n" + getStatus(iteration) +
-				"\n++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++");
+		String lastDot = this.iteration >= this.iterationsPerDot ? "." : "";
+		System.out.println(lastDot + "X\nDone: " + getStatus(iteration));
 		this.startTime = null;
 		this.iteration = 0;
 	}

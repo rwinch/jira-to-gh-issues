@@ -20,6 +20,7 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import io.pivotal.util.ProgressTracker;
@@ -32,7 +33,6 @@ import reactor.core.publisher.Mono;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.stereotype.Component;
-import org.springframework.util.Assert;
 import org.springframework.web.client.RestOperations;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.reactive.function.client.WebClient;
@@ -82,18 +82,46 @@ public class JiraClient {
 	}
 
 	public List<JiraIssue> findIssues(String jql) {
-		return findIssues(jql, 5, DEFAULT_MAX_ISSUE_COUNT).collectList().block();
+		return findIssuesInternal(jql).block();
 	}
 
-	public Flux<JiraIssue> findIssues(String jql, int concurrency, int maxIssues) {
+	public List<JiraIssue> findIssuesVotesAndCommits(
+			String jql, Function<List<JiraIssue>, List<JiraIssue>> filterIssuesToImport) {
+
+		return findIssuesInternal(jql)
+				.flatMap(issues -> {
+					// Load votes and commits only for issues not already imported
+					return populateVotesAndCommits(filterIssuesToImport.apply(issues), 8)
+							.then(Mono.just(issues));
+				})
+				.block();
+	}
+
+	private Mono<List<JiraIssue>> findIssuesInternal(String jql) {
+		return getIssues(jql, 5, DEFAULT_MAX_ISSUE_COUNT)
+				.collectList()
+				.doOnNext(issues -> {
+					logger.info("Found {} issues", issues.size());
+
+					Map<String, JiraIssue> backportSubtasks = issues.stream()
+							.filter(issue -> issue.getFields().getIssuetype().getName().equalsIgnoreCase("Backport"))
+							.filter(issue -> issue.getFields().getFixVersions() != null)
+							.collect(Collectors.toMap(JiraIssue::getKey, o -> o));
+
+					issues.forEach(issue -> issue.initFixAndBackportVersions(backportSubtasks));
+				});
+	}
+
+	private Flux<JiraIssue> getIssues(String jql, int concurrency, int maxIssues) {
 		int pageSize = 1000;
-		logger.info("Loading issues, query: \"{}\"", jql);
+		logger.info("Loading issues (1000 per page) for jql=\"{}\"", jql);
 		return Flux.range(0, maxIssues / 1000)
 				.flatMap(page -> {
 					int startAt = page * pageSize;
-					System.out.print("[" + startAt + "-" + (startAt + 1000) + "]");
+					System.out.print((page + 1) + " ");
 					return webClient.get()
-							.uri("/rest/api/2/search?maxResults=1000&startAt={0}&jql={jql}&fields=" + JiraIssue.FIELD_NAMES, startAt, jql)
+							.uri("/rest/api/2/search?" +
+									"maxResults=1000&startAt={0}&jql={jql}&fields=" + JiraIssue.FIELD_NAMES, startAt, jql)
 							.retrieve()
 							.bodyToMono(JiraSearchResult.class)
 							.onErrorResume(ex -> {
@@ -102,17 +130,9 @@ public class JiraClient {
 							});
 
 				}, concurrency)
-				.doOnNext(result -> result.getIssues().forEach(JiraIssue::initFixAndBackportVersions))
-				.doOnComplete(() -> System.out.println("\nDone"))
 				.sort(Comparator.comparingLong(JiraSearchResult::getStartAt))
-				.concatMapIterable(JiraSearchResult::getIssues);
-	}
-
-	public List<JiraIssue> findIssuesVotesAndCommits(String jql) {
-		return findIssues(jql, 5, DEFAULT_MAX_ISSUE_COUNT)
-				.collectList()
-				.flatMap(issues -> populateVotesAndCommits(issues, 10).then(Mono.just(issues)))
-				.block();
+				.concatMapIterable(JiraSearchResult::getIssues)
+				.doOnComplete(() -> System.out.println("complete"));
 	}
 
 	/**
@@ -120,8 +140,8 @@ public class JiraClient {
 	 * @param concurrency how many issues to fetch data for concurrently. Actual concurrency
 	 */
 	private Mono<Void> populateVotesAndCommits(List<JiraIssue> issues, int concurrency) {
-		logger.info("Loading votes and commits for {} issues", issues.size());
-		ProgressTracker tracker = new ProgressTracker(issues.size(), 100, 1000, logger.isDebugEnabled());
+		logger.info("Loading votes and commits (2 requests per issue/iteration)", issues.size());
+		ProgressTracker tracker = new ProgressTracker(issues.size(), 50, 1000, logger.isDebugEnabled());
 		return Flux.fromIterable(issues)
 				.flatMap(issue -> {
 					Mono<Map<String, Object>> votesResult = webClient.get()
@@ -131,7 +151,8 @@ public class JiraClient {
 							.timeout(Duration.ofSeconds(10))
 							.retry(3);
 					Mono<Map<String, Object>> commitsResult = webClient.get()
-							.uri("/rest/dev-status/1.0/issue/detail?issueId={id}&applicationType=github&dataType=repository", issue.getId())
+							.uri("/rest/dev-status/1.0/issue/detail?" +
+									"issueId={id}&applicationType=github&dataType=repository", issue.getId())
 							.retrieve()
 							.bodyToMono(MAP_TYPE)
 							.timeout(Duration.ofSeconds(10))
@@ -143,10 +164,7 @@ public class JiraClient {
 					tuple.getT1().setCommitUrls(extractCommits(tuple.getT3()));
 					tracker.updateForIteration();
 				})
-				.doOnComplete(() -> {
-					tracker.stopProgress();
-					verify(issues);
-				})
+				.doOnComplete(tracker::stopProgress)
 				.then();
 	}
 
@@ -161,17 +179,6 @@ public class JiraClient {
 			}
 		}
 		return Collections.emptyList();
-	}
-
-	private void verify(List<JiraIssue> issues) {
-
-		List<JiraIssue> incomplete = issues.stream()
-				.filter(issue -> issue.getVotes() == -1 || issue.getCommitUrls() == null)
-				.collect(Collectors.toList());
-
-		Assert.isTrue(incomplete.isEmpty(), "No votes and/or commits: " + incomplete.stream()
-				.map(issue -> issue.getKey() + ", votes=" + issue.getVotes() + ", commitUrls=" + issue.getCommitUrls())
-				.collect(Collectors.toList()));
 	}
 
 }

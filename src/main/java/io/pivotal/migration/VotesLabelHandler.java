@@ -26,7 +26,7 @@ import org.eclipse.egit.github.core.Label;
  */
 public class VotesLabelHandler implements LabelHandler {
 
-	private static final Label label = LabelFactories.HAS_LABEL.apply("upvoted-jira");
+	private static final Label label = LabelFactories.HAS_LABEL.apply("votes-jira");
 
 	private static final Set<String> labelSet = Collections.singleton(label.getName());
 
@@ -38,6 +38,6 @@ public class VotesLabelHandler implements LabelHandler {
 
 	@Override
 	public Set<String> getLabelsFor(JiraIssue issue) {
-		return issue.getVotes() > 10 ? labelSet : Collections.emptySet();
+		return issue.getVotes() >= 10 ? labelSet : Collections.emptySet();
 	}
 }

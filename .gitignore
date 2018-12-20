@@ -21,5 +21,6 @@ build/
 atlassian-ide-plugin.xml
 src/main/resources/application-local.properties
 .factorypath
-spr-failures.txt
-spr-mappings.csv
+github-issue-mappings.properties
+github-migration-failures.txt
+imported-issues.properties

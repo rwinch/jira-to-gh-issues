@@ -15,8 +15,6 @@
  */
 package io.pivotal.migration;
 
-import java.io.File;
-import java.io.FileWriter;
 import java.io.IOException;
 import java.net.HttpURLConnection;
 import java.net.URI;
@@ -27,7 +25,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
-import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -50,6 +47,7 @@ import io.pivotal.jira.JiraVersion;
 import io.pivotal.util.MarkupEngine;
 import io.pivotal.util.MarkupManager;
 import io.pivotal.util.ProgressTracker;
+import io.pivotal.util.RateLimitHelper;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import org.apache.logging.log4j.LogManager;
@@ -75,6 +73,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.RequestEntity;
 import org.springframework.http.RequestEntity.BodyBuilder;
+import org.springframework.http.ResponseEntity;
 import org.springframework.http.client.ClientHttpResponse;
 import org.springframework.http.client.HttpComponentsClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
@@ -121,9 +120,14 @@ public class MigrationClient {
 	/** For assignees */
 	Map<String, String> jiraToGithubUsername;
 
-	private final ExtendedRestTemplate rest = new ExtendedRestTemplate();
+	// From https://developer.github.com/v3/guides/best-practices-for-integrators/#dealing-with-rate-limits
+	// If you're making a large number of POST, PATCH, PUT, or DELETE requests
+	// for a single user or client ID, wait at least one second between each request.
+	private final RateLimitHelper rateLimitHelper = new RateLimitHelper();
 
-	private final GitHubClient client = new ExtendedEgitGitHubClient();
+	private final ExtendedRestTemplate rest = new ExtendedRestTemplate(rateLimitHelper);
+
+	private final GitHubClient client = new ExtendedEgitGitHubClient(rateLimitHelper);
 
 	private final IRepositoryIdProvider repositoryIdProvider;
 
@@ -166,9 +170,9 @@ public class MigrationClient {
 	}
 
 
-	public void deleteRepository() throws IOException {
+	public boolean deleteRepository() throws IOException {
 		if(!this.config.isDeleteCreateRepositorySlug()) {
-			return;
+			return false;
 		}
 		String slug = this.config.getRepositorySlug();
 
@@ -178,16 +182,20 @@ public class MigrationClient {
 			throw new IllegalStateException("Attempting to delete a repository that has commits. Terminating!");
 		} catch(RequestException e) {
 			if(e.getStatus() != 404 & e.getStatus() != 409) {
-				throw new IllegalStateException(
-						"Attempting to delete a repository, but it appears the repository has commits. Terminating!", e);
+				throw new IllegalStateException("Attempting to delete a repository, but it appears the repository has commits. Terminating!", e);
 			}
 		}
 
 		logger.info("Deleting repository {}", slug);
 
-		UriComponentsBuilder uri = UriComponentsBuilder.fromUriString(
-				"https://api.github.com/repos/" + slug).queryParam("access_token", this.config.getAccessToken());
-		rest.delete(uri.toUriString());
+		String url = UriComponentsBuilder
+				.fromUriString("https://api.github.com/repos/" + slug)
+				.queryParam("access_token", this.config.getAccessToken())
+				.toUriString();
+
+		// Don't use the ExtendedRestTemplate here which retries and suppresses failure
+		rest.delete(url);
+		return true;
 	}
 
 	public void createRepository() {
@@ -202,14 +210,15 @@ public class MigrationClient {
 				.queryParam("access_token", this.config.getAccessToken());
 		Map<String, String> repository = new HashMap<>();
 		repository.put("name", slug.split("/")[1]);
-		rest.postForEntity(uri.toUriString(), repository, String.class);
+		ResponseEntity<String> entity = rest.postForEntity(uri.toUriString(), repository, String.class);
+		Assert.notNull(entity, "No response");
 	}
 
 	public void createMilestones(List<JiraVersion> versions) throws IOException {
 		MilestoneService milestones = new MilestoneService(this.client);
 		versions = versions.stream().filter(milestoneFilter).collect(Collectors.toList());
 		logger.info("Creating {} milestones", versions.size());
-		ProgressTracker tracker = new ProgressTracker(versions.size(), logger.isDebugEnabled());
+		ProgressTracker tracker = new ProgressTracker(versions.size(), 1, 50, logger.isDebugEnabled());
 		for (JiraVersion version : versions) {
 			tracker.updateForIteration();
 			Milestone milestone = new Milestone();
@@ -239,109 +248,93 @@ public class MigrationClient {
 
 	// https://gist.github.com/jonmagic/5282384165e0f86ef105#start-an-issue-import
 
-	public void createIssues(List<JiraIssue> issues) throws IOException {
+	public void createIssues(List<JiraIssue> allIssues, MigrationContext context) {
 
-		File mappingsFile = new File("spr-mappings.csv");
-		File failuresFile = new File("spr-failures.txt");
-		mappingsFile.delete();
-		failuresFile.delete();
+		logger.info("Collecting list of users from all issues");
+		Map<String, JiraUser> users = collectUsers(allIssues);
+		this.markup.configureUserLookup(users);
 
-		try (FileWriter successWriter = new FileWriter(mappingsFile, true);
-			 FileWriter failWriter = new FileWriter(failuresFile, true)) {
+		logger.info("Retrieving list of milestones");
+		Map<String, Milestone> milestones = retrieveMilestones();
 
+		logger.info("Collecting lists of backport issues by milestone");
+		MultiValueMap<Milestone, JiraIssue> backportMap = collectBackports(allIssues, milestones);
 
-			logger.info("Loading list of milestones and collecting list of users from all issues");
-			this.markup.configureUserLookup(scrapeUsers(issues));
-			Map<String, Milestone> milestones = new MilestoneService(this.client)
-					.getMilestones(repositoryIdProvider, "all")
-					.stream()
-					.collect(Collectors.toMap(Milestone::getTitle, Function.identity()));
+		logger.info("Preparing for import (wiki to markdown, select labels, format Jira details, etc)");
+		List<JiraIssue> importIssues = context.filterRemaingIssuesToImport(allIssues);
+		List<ImportGithubIssue> importData = importIssues.stream()
+				.map(jiraIssue -> {
+					ImportGithubIssue issueToImport = new ImportGithubIssue();
+					issueToImport.setIssue(initGithubIssue(jiraIssue, milestones));
+					issueToImport.setComments(initComments(jiraIssue));
+					return issueToImport;
+				})
+				.collect(Collectors.toList());
 
-
-			logger.info("Preparing issues data to import: wiki to markdown, labels, Jira details, etc.");
-			List<ImportGithubIssue> issuesToImport = issues.stream()
-					.map(jiraIssue -> {
-						ImportGithubIssue issueToImport = new ImportGithubIssue();
-						issueToImport.setIssue(initGithubIssue(jiraIssue, milestones));
-						issueToImport.setComments(initComments(jiraIssue));
-						return issueToImport;
-					})
-					.collect(Collectors.toList());
-
-
-
-			logger.info("Starting to import issues");
-			ProgressTracker tracker1 = new ProgressTracker(issues.size(), logger.isDebugEnabled());
-			List<ImportedIssue> importedIssues = new ArrayList<>(issues.size());
-			for (int i = 0, issuesSize = issues.size(); i < issuesSize; i++) {
-				tracker1.updateForIteration();
-				JiraIssue jiraIssue = issues.get(i);
-				ImportGithubIssue issueToImport = issuesToImport.get(i);
-				ImportGithubIssueResponse importResponse = executeIssueImport(issueToImport);
-				importedIssues.add(new ImportedIssue(jiraIssue, importResponse));
-				// Start checking issues imported 50 iterations/seconds ago,
-				// i.e. long enough to avoid "pending" status but soon enough for early detection of failure.
-				if (i > 50) {
-					if (!checkImportResult(importedIssues.get(i - 50), successWriter, failWriter)) {
-						logger.error("Detected import failure for " + jiraIssue.getKey());
+		logger.info("Starting to import (2 requests per issue/iteration) {} issues", importIssues.size());
+		ProgressTracker tracker1 = new ProgressTracker(importIssues.size(), 4, 200, logger.isDebugEnabled());
+		List<ImportedIssue> importedIssues = new ArrayList<>(importIssues.size());
+		for (int i = 0, issuesSize = importIssues.size(); i < issuesSize; i++) {
+			tracker1.updateForIteration();
+			ImportGithubIssueResponse importResponse = executeIssueImport(importData.get(i), context);
+			importedIssues.add(new ImportedIssue(importIssues.get(i), null, importResponse));
+			if (i % 50 == 0 && i != 0) {
+				for (int j = i - 50; j <= i; j++) {
+					if (!checkImportResult(importedIssues.get(j), context)) {
+						logger.error("Detected import failure for " + importIssues.get(i).getKey());
 						break;
 					}
 				}
 			}
-			tracker1.stopProgress();
-			logger.info("Checking remaining import results (this could take up to 50 secs)");
-			importedIssues.forEach(issue -> checkImportResult(issue, successWriter, failWriter));
-			long failCount = importedIssues.stream()
-					.filter(issue -> !checkImportResult(issue, successWriter, failWriter))
-					.count();
-			if (failCount != 0) {
-				long successCount = importedIssues.stream()
-						.filter(issue -> checkImportResult(issue, successWriter, failWriter)).count();
-				logger.error(successCount + " successful imports, and " + failCount + " failures of " + issues.size());
-				return;
-			}
-			logger.info("All issues imported successfully");
+		}
+		tracker1.stopProgress();
 
+		logger.info("Checking remaining import results");
+		importedIssues.forEach(issue -> checkImportResult(issue, context));
+		if (context.getFailedImportCount() == 0) {
+			logger.info("0 failures");
+		}
+		else {
+			int failed = context.getFailedImportCount();
+			int total = importedIssues.size();
+			logger.error(failed + " failed, " + (total - failed) + " succeeded, " + total + " total");
+			return;
+		}
 
-
-			logger.info("Creating backport issue holders");
-			MultiValueMap<Milestone, ImportedIssue> backportMap = groupBackportsByMilestone(importedIssues, milestones);
-			if (backportMap.isEmpty()) {
-				logger.info("There are 0 backports");
-				return;
-			}
-			List<ImportedIssue> backportIssues = new ArrayList<>(backportMap.size());
-			ProgressTracker tracker2 = new ProgressTracker(backportIssues.size(), logger.isDebugEnabled());
-			backportMap.keySet().forEach(milestone -> {
-				tracker2.updateForIteration();
-				GithubIssue ghIssue = initMilestoneBackportIssue(milestone, backportMap.get(milestone));
-				ImportGithubIssue toImport = new ImportGithubIssue();
-				toImport.setIssue(ghIssue);
-				ImportGithubIssueResponse importResponse = executeIssueImport(toImport);
-				backportIssues.add(new ImportedIssue(null, importResponse));
-			});
-			tracker2.stopProgress();
-			logger.info("Checking created backport issues");
-			ProgressTracker tracker3 = new ProgressTracker(backportIssues.size(), logger.isDebugEnabled());
-			backportIssues.forEach(importedIssue -> {
-				tracker3.updateForIteration();
-				checkImportResult(importedIssue, successWriter, failWriter);
-			});
-			tracker3.stopProgress();
-			failCount = backportIssues.stream()
-					.filter(issue -> !checkImportResult(issue, successWriter, failWriter))
-					.count();
-			if (failCount != 0) {
-				logger.error("Failed to create " + failCount + " backport issues");
-				return;
-			}
-
-
-			logger.info("All backport issues created successfully");
+		logger.info("{} backport issue holders to create", backportMap.size());
+		if (backportMap.isEmpty()) {
+			return;
+		}
+		List<ImportedIssue> backportIssueHolders = new ArrayList<>(backportMap.size());
+		ProgressTracker tracker2 = new ProgressTracker(backportIssueHolders.size(), logger.isDebugEnabled());
+		backportMap.keySet().forEach(milestone -> {
+			tracker2.updateForIteration();
+			GithubIssue ghIssue = initMilestoneBackportIssue(milestone, backportMap.get(milestone), context);
+			ImportGithubIssue toImport = new ImportGithubIssue();
+			toImport.setIssue(ghIssue);
+			ImportGithubIssueResponse importResponse = executeIssueImport(toImport, context);
+			backportIssueHolders.add(new ImportedIssue(null, milestone, importResponse));
+		});
+		tracker2.stopProgress();
+		logger.info("Checking import results for backport issue holders");
+		backportIssueHolders.forEach(issue -> checkImportResult(issue, context));
+		if (context.getFailedImportCount() == 0) {
+			logger.info("0 failures");
+		}
+		else {
+			List<String> failed = backportIssueHolders.stream()
+					.filter(issue -> !checkImportResult(issue, context))
+					.map(issue -> issue.getMilestone().getTitle())
+					.collect(Collectors.toList());
+			List<String> succeeded = backportIssueHolders.stream()
+					.filter(i -> checkImportResult(i, context))
+					.map(issue -> issue.getMilestone().getTitle())
+					.collect(Collectors.toList());
+			logger.error("Failed:\n" + failed + "\nSucceeded:\n" + succeeded);
 		}
 	}
 
-	private Map<String, JiraUser> scrapeUsers(List<JiraIssue> issues) {
+	private Map<String, JiraUser> collectUsers(List<JiraIssue> issues) {
 		Map<String, JiraUser> userLookup = new HashMap<>();
 		for (JiraIssue issue : issues) {
 			Fields fields = issue.getFields();
@@ -351,6 +344,31 @@ public class MigrationClient {
 			}
 		}
 		return userLookup;
+	}
+
+	private Map<String, Milestone> retrieveMilestones() {
+		try {
+			return new MilestoneService(this.client)
+					.getMilestones(repositoryIdProvider, "all")
+					.stream()
+					.collect(Collectors.toMap(Milestone::getTitle, Function.identity()));
+		}
+		catch (IOException ex) {
+			throw new IllegalStateException(ex);
+		}
+	}
+
+	private MultiValueMap<Milestone, JiraIssue> collectBackports(List<JiraIssue> issues, Map<String, Milestone> milestones) {
+		MultiValueMap<Milestone, JiraIssue> backportMap = new LinkedMultiValueMap<>();
+		for (JiraIssue jiraIssue : issues) {
+			for (JiraFixVersion version : jiraIssue.getBackportVersions()) {
+				Milestone milestone = milestones.get(version.getName());
+				if (milestone != null) {
+					backportMap.add(milestone, jiraIssue);
+				}
+			}
+		}
+		return backportMap;
 	}
 
 	private GithubIssue initGithubIssue(JiraIssue issue, Map<String, Milestone> milestones) {
@@ -390,11 +408,14 @@ public class MigrationClient {
 		if (closed) {
 			ghIssue.setClosedAt(updated);
 		}
-		JiraUser assignee = fields.getAssignee();
-		if (assignee != null) {
-			String ghUsername = jiraToGithubUsername.get(assignee.getKey());
-			if (ghUsername != null) {
-				ghIssue.setAssignee(ghUsername);
+		// Avoid using actual assignees while in test mode
+		if (!config.isDeleteCreateRepositorySlug()) {
+			JiraUser assignee = fields.getAssignee();
+			if (assignee != null) {
+				String ghUsername = jiraToGithubUsername.get(assignee.getKey());
+				if (ghUsername != null) {
+					ghIssue.setAssignee(ghUsername);
+				}
 			}
 		}
 		ghIssue.setCreatedAt(fields.getCreated());
@@ -431,7 +452,6 @@ public class MigrationClient {
 		}
 		List<JiraAttachment> attachments = fields.getAttachment();
 		if (!attachments.isEmpty()) {
-			boolean multiLine = attachments.size() > 1;
 			jiraDetails += attachments.stream()
 					.map(attachment -> {
 						String contentUrl = attachment.getContent();
@@ -519,45 +539,31 @@ public class MigrationClient {
 		return comments;
 	}
 
-	private GithubIssue initMilestoneBackportIssue(Milestone milestone, List<ImportedIssue> backportIssues) {
-		GithubIssue ghIssue = new GithubIssue();
-		ghIssue.setMilestone(milestone.getNumber());
-		ghIssue.setTitle(milestone.getTitle() + " Backport Issues");
-		ghIssue.setCreatedAt(new DateTime(milestone.getCreatedAt().getTime()));
-		if (milestone.getState().equals("closed")) {
-			ghIssue.setClosed(true);
-			ghIssue.setClosedAt(new DateTime(milestone.getDueOn()));
-		}
-		String body = backportIssues.stream()
-				.map(importedIssue -> {
-					int ghIssueNumber = importedIssue.getIssueNumber();
-					String summary = importedIssue.getJiraIssue().getFields().getSummary();
-					return "**#" + ghIssueNumber + "** - " + summary;
-				})
-				.collect(Collectors.joining("\n"));
-		ghIssue.setBody(body);
-		return ghIssue;
-	}
-
-	private ImportGithubIssueResponse executeIssueImport(ImportGithubIssue importIssue) {
+	private ImportGithubIssueResponse executeIssueImport(ImportGithubIssue importIssue, MigrationContext context) {
+		ImportGithubIssueResponse response = null;
+		Throwable failure = null;
 		try {
 			RequestEntity<ImportGithubIssue> request = importRequestBuilder.body(importIssue);
-			ImportGithubIssueResponse response = rest.exchange(request, ImportGithubIssueResponse.class).getBody();
+			response = rest.exchange(request, ImportGithubIssueResponse.class).getBody();
 			if (response != null) {
 				response.setImportIssue(importIssue);
-				return response;
 			}
-			logger.error("Failed to submit import for \"" + importIssue.getIssue().getTitle() + "\"");
+			else {
+				failure = new IllegalStateException("No body in ResponseEntity");
+			}
 		}
 		catch (Throwable ex) {
-			logger.error("Failed to submit import for \"" + importIssue.getIssue().getTitle() + "\"", ex);
+			failure = ex;
 		}
-		return null;
+		if (failure != null) {
+			String message = "Failed to POST import for \"" + importIssue.getIssue().getTitle() + "\"";
+			logger.error(message, failure.getMessage());
+			context.addFailureMessage(message + ": " + failure.getMessage());
+		}
+		return response;
 	}
 
-	private boolean checkImportResult(
-			ImportedIssue importedIssue, FileWriter mappingsWriter, FileWriter failuresWriter) {
-
+	private boolean checkImportResult(ImportedIssue importedIssue, MigrationContext context) {
 		if(importedIssue.getIssueNumber() != null) {
 			return true;
 		}
@@ -570,14 +576,22 @@ public class MigrationClient {
 				importedIssue.setFailure("No body from import request");
 				return false;
 			}
-			String importIssuesUrl = importedIssue.getImportResponse().getUrl();
-			URI uri = UriComponentsBuilder.fromUriString(importIssuesUrl).build().toUri();
+			String importUrl = importedIssue.getImportResponse().getUrl();
+			URI uri = UriComponentsBuilder.fromUriString(importUrl).build().toUri();
 			RequestEntity<Void> request = RequestEntity.get(uri)
 					.accept(new MediaType("application", "vnd.github.golden-comet-preview+json"))
 					.header("Authorization", "token " + this.config.getAccessToken())
 					.build();
 			while (true) {
-				Map<String, Object> body = rest.exchange(request, MAP_TYPE).getBody();
+				Map<String, Object> body;
+				try {
+					body = rest.exchange(request, MAP_TYPE).getBody();
+				}
+				catch (RestClientException ex) {
+					logger.error("Import failed: " + importUrl, ex);
+					importedIssue.setFailure(ex.getMessage());
+					return false;
+				}
 				if (body == null) {
 					importedIssue.setFailure("No body from import result request");
 					return false;
@@ -590,8 +604,8 @@ public class MigrationClient {
 				}
 				else if ("pending".equals(status)) {
 					logger.debug("{} import still pending. Waiting 1 second",
-							jiraIssue != null ? jiraIssue.getKey() : importedIssue.getImportResponse().getUrl());
-					waitForAtLeastOneSecondBetweenRequests();
+							jiraIssue != null ? jiraIssue.getKey() : importUrl);
+					rateLimitHelper.obtainPermitToCall();
 					continue;
 				}
 				if (url == null) {
@@ -606,62 +620,37 @@ public class MigrationClient {
 			}
 		}
 		finally {
-			if (importedIssue.getIssueNumber() != null) {
-				if (jiraIssue != null) {
-					String line = jiraIssue.getKey() + "," + importedIssue.getIssueNumber() + "\n";
-					try {
-						mappingsWriter.write(line);
-						mappingsWriter.flush();
-					}
-					catch (IOException ex) {
-						logger.error("Failed to write import result {}:\n{}", ex.getMessage(), line);
-					}
-				}
-			}
-			else {
-				String line = "\n" +
-						(jiraIssue != null ? jiraIssue.getKey() : importedIssue.getImportResponse().getUrl()) +
-						" [" + importedIssue.getFailure() + "]\n";
-				try {
-					failuresWriter.write(line);
-					failuresWriter.flush();
-				}
-				catch (IOException ex) {
-					logger.error("Failed to write import result {}:\n{}", ex.getMessage(), line);
-				}
-			}
+			context.addImportResult(importedIssue);
 		}
 	}
 
-	private MultiValueMap<Milestone, ImportedIssue> groupBackportsByMilestone(
-			List<ImportedIssue> importedIssues, Map<String, Milestone> milestones) {
+	private GithubIssue initMilestoneBackportIssue(
+			Milestone milestone, List<JiraIssue> backportIssues, MigrationContext context) {
 
-		MultiValueMap<Milestone, ImportedIssue> backportMap = new LinkedMultiValueMap<>();
-		for (ImportedIssue importedIssue : importedIssues) {
-			for (JiraFixVersion version : importedIssue.getJiraIssue().getBackportVersions()) {
-				Milestone milestone = milestones.get(version.getName());
-				// TODO: shouldn't there be a milestone for *any* backport version?
-				// Run some tests on the data to check for anomalies, e.g. based on pseudo versions like Contributions Welcome
-				if (milestone != null) {
-					backportMap.add(milestone, importedIssue);
-				}
-			}
+		GithubIssue ghIssue = new GithubIssue();
+		ghIssue.setMilestone(milestone.getNumber());
+		ghIssue.setTitle(milestone.getTitle() + " Backported Issues");
+		ghIssue.setCreatedAt(new DateTime(milestone.getCreatedAt().getTime()));
+		if (milestone.getState().equals("closed")) {
+			ghIssue.setClosed(true);
+			ghIssue.setClosedAt(new DateTime(milestone.getDueOn()));
 		}
-		return backportMap;
-	}
-
-
-	private static void waitForAtLeastOneSecondBetweenRequests() {
-		try {
-			// From https://developer.github.com/v3/guides/best-practices-for-integrators/#dealing-with-rate-limits
-			// If you're making a large number of POST, PATCH, PUT, or DELETE requests
-			// for a single user or client ID, wait at least one second between each request.
-
-			Thread.sleep(1000);
-		}
-		catch (InterruptedException ex) {
-			// ignore
-		}
+		String body = backportIssues.stream()
+				.map(jiraIssue -> {
+					String jiraKey = jiraIssue.getKey();
+					Integer ghIssueId = context.getGitHubIssueId(jiraKey);
+					if (ghIssueId == null) {
+						context.addFailureMessage(milestone.getTitle() +
+								" backport issues holder is a missing the GitHub issue id for " + jiraKey + "\n");
+					}
+					MarkupEngine engine = markup.engine(jiraIssue.getFields().getCreated());
+					String summary = jiraIssue.getFields().getSummary();
+					summary = engine.convertBackportIssueSummary(summary);
+					return "**#" + ghIssueId + "** - " + summary;
+				})
+				.collect(Collectors.joining("\n"));
+		ghIssue.setBody(body);
+		return ghIssue;
 	}
 
 
@@ -676,14 +665,20 @@ public class MigrationClient {
 	@Data
 	@RequiredArgsConstructor
 	static class ImportedIssue {
-		/**
-		 * The below two (issueNumber and failure) will be null, until we get the
-		 * result from the import.
-		 */
+
+		// The below two (issueNumber and failure) will be null, until we get the
+		// result from the import.
+
 		Integer issueNumber;
 		String failure;
 
+		// The below two are mutually exclusive, depending on whether:
+		//  1) It's an issue imported from Jira
+		//  2) It's a backport issue holder for a specific milestone
+
 		final JiraIssue jiraIssue;
+		final Milestone milestone;
+
 		final ImportGithubIssueResponse importResponse;
 	}
 
@@ -712,50 +707,80 @@ public class MigrationClient {
 	}
 
 
+
+	private static final List<String> rateLimitedMethods = Arrays.asList("POST", "PATCH", "PUT", "DELETE");
+
+
 	private static class ExtendedRestTemplate extends RestTemplate {
 
-		ExtendedRestTemplate() {
+		private final RateLimitHelper rateLimitHelper;
+
+
+		ExtendedRestTemplate(RateLimitHelper rateLimitHelper) {
 			super(new HttpComponentsClientHttpRequestFactory());
+			this.rateLimitHelper = rateLimitHelper;
 		}
+
 
 		@Override
 		protected <T> T doExecute(URI url, HttpMethod method, RequestCallback requestCallback,
 				ResponseExtractor<T> responseExtractor) throws RestClientException {
-			return doExecute(url, method, requestCallback, responseExtractor, 45);
+			return doExecuteExtended(url, method, requestCallback, responseExtractor);
 		}
 
-		private <T> T doExecute(URI url, HttpMethod method, RequestCallback requestCallback,
-				ResponseExtractor<T> responseExtractor, long abuseSleepTimeInSeconds) throws RestClientException {
+		private <T> T doExecuteExtended(URI url, HttpMethod method, RequestCallback requestCallback,
+				ResponseExtractor<T> responseExtractor) throws RestClientException {
+
 			try {
-				waitForAtLeastOneSecondBetweenRequests();
 				RequestCallback decoratedRequestCallback = request -> {
 					if (requestCallback != null) {
 						requestCallback.doWithRequest(request);
 					}
 					MigrationClient.logger.debug("{} {} {}", method, url.getPath(), request.getHeaders());
 				};
-				return super.doExecute(url, method, decoratedRequestCallback, responseExtractor);
-			} catch(HttpClientErrorException e) {
-				HttpHeaders headers = e.getResponseHeaders();
-				Assert.notNull(headers, "No headers: " + method + " " + url);
-				long sleep;
-				if(!"0".equals(headers.getFirst("X-RateLimit-Remaining"))) {
-					if(e.getResponseBodyAsString().contains("https://developer.github.com/v3/#abuse-rate-limits")) {
-						MigrationClient.logger.info("Received https://developer.github.com/v3/#abuse-rate-limits with no indication of how long to wait. Let's guess & wait "+abuseSleepTimeInSeconds+ " seconds.");
-						sleep = TimeUnit.SECONDS.toMillis(abuseSleepTimeInSeconds);
-					} else {
-						MigrationClient.logger.error(e.getResponseBodyAsString());
-						throw e;
-					}
-				} else {
-					MigrationClient.logger.info("Received X-RateLimit-Reset. Waiting to do additional work");
-					String reset = headers.getFirst("X-RateLimit-Reset");
-					Assert.notNull(reset, "No X-RateLimit-Reset: " + headers);
-					sleep = (1000 * Long.parseLong(reset)) - System.currentTimeMillis();
+				if (rateLimitedMethods.contains(method.name())) {
+					rateLimitHelper.obtainPermitToCall();
 				}
-				sleepFor(sleep);
+				return super.doExecute(url, method, decoratedRequestCallback, responseExtractor);
 			}
-			return doExecute(url, method, requestCallback, responseExtractor, abuseSleepTimeInSeconds * 2);
+			catch(HttpClientErrorException ex) {
+				HttpHeaders headers = ex.getResponseHeaders();
+				String requestInfo = method + " " + url.getPath() + " " + headers;
+				if (headers == null) {
+					MigrationClient.logger.error("No headers for " + requestInfo);
+					throw ex;
+				}
+				long timeToSleep = 0;
+				String retryAfter = headers.getFirst("Retry-After");
+				if (retryAfter != null) {
+					MigrationClient.logger.debug("Received Retry-After: " + retryAfter + " for " + requestInfo);
+					timeToSleep = 1000 * Integer.parseInt(retryAfter);
+				}
+				else if ("0".equals(headers.getFirst("X-RateLimit-Remaining"))) {
+					String reset = headers.getFirst("X-RateLimit-Reset");
+					if (reset != null) {
+						MigrationClient.logger.debug("Received X-RateLimit-Reset: " + reset + " for " + requestInfo);
+						timeToSleep = (1000 * Long.parseLong(reset)) - System.currentTimeMillis();
+					}
+					else {
+						MigrationClient.logger.error("X-RateLimit-Remaining:0 but no X-RateLimit-Reset: " + requestInfo);
+						throw ex;
+					}
+				}
+				else {
+					throw ex;
+				}
+				try {
+					if (timeToSleep > 0) {
+						Thread.sleep(timeToSleep);
+					}
+				}
+				catch (InterruptedException interruptedEx) {
+					// Ignore
+				}
+			}
+			// Recurse and retry...
+			return doExecuteExtended(url, method, requestCallback, responseExtractor);
 		}
 
 		@Override
@@ -764,32 +789,23 @@ public class MigrationClient {
 					response.getStatusCode(), response.getHeaders().getFirst("X-RateLimit-Remaining"));
 			super.handleResponse(url, method, response);
 		}
-
-		private void sleepFor(long sleep) {
-			if(sleep < 1) {
-				return;
-			}
-			long endTime = System.currentTimeMillis() + sleep;
-			MigrationClient.logger.debug("Sleeping until {}", new DateTime(endTime));
-			for(long now = System.currentTimeMillis(); now < endTime; now = System.currentTimeMillis()) {
-				try {
-					Thread.sleep(sleep);
-				} catch (InterruptedException e1) {
-					// Ignore
-				}
-			}
-			MigrationClient.logger.debug("Continuing");
-		}
 	}
 
 
 	private class ExtendedEgitGitHubClient extends GitHubClient {
 
+		private final RateLimitHelper rateLimitHelper;
+
+
+		ExtendedEgitGitHubClient(RateLimitHelper rateLimitHelper) {
+			this.rateLimitHelper = rateLimitHelper;
+		}
+
 		@Override
 		protected HttpURLConnection configureRequest(HttpURLConnection request) {
 			setOAuth2Token(config.getAccessToken());
 			logger.debug("{} {}", request.getRequestMethod().toUpperCase(), request.getURL().getPath());
-			waitForAtLeastOneSecondBetweenRequests();
+			rateLimitHelper.obtainPermitToCall();
 			HttpURLConnection result = super.configureRequest(request);
 			result.setRequestProperty(HEADER_ACCEPT, MediaType.APPLICATION_JSON_VALUE);
 			return result;
