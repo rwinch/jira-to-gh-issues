@@ -28,6 +28,7 @@ import io.pivotal.jira.JiraClient;
 import io.pivotal.jira.JiraConfig;
 import io.pivotal.jira.JiraIssue;
 import io.pivotal.jira.JiraProject;
+import io.pivotal.jira.report.MarkupConverter;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.joda.time.DateTime;
@@ -43,7 +44,7 @@ import org.springframework.web.client.HttpClientErrorException;
 
 /**
  * @author Rob Winch
- * @see MigrationInfoApp
+ * @see MarkupConverter
  */
 @SpringBootApplication(scanBasePackages = "io.pivotal")
 public class MigrationApp implements CommandLineRunner {
@@ -76,8 +77,8 @@ public class MigrationApp implements CommandLineRunner {
 		// - numbered lists #, ##, #* via Text Visitor
 
 		// TODO fields:
-		// - waiting for triage to "no fix version"
-		// - ignore assignees on backlog and waiting for triage versions
+		// - "no fix version" -> waiting for triage
+		// - drop assignees from backlog and waiting for triage versions
 		// - contributions welcome -> general backlog
 
 		File mappingsFile = new File("github-issue-mappings.properties");

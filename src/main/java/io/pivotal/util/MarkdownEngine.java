@@ -102,6 +102,8 @@ public class MarkdownEngine implements MarkupEngine {
 		// Also take into account nested lists, i.e. ##, #*
 		// text = text.replaceAll("(?m)^[ \\t]*# ", "- ");   // ordered
 
+		// Formatting issues: SPR-5079, SPR-7655, SPR-11393 (table, nested bullets) | SPR-1987
+
 		// TODO:
 		// Unordered lists mess with "*" in pasted Javadoc so brute force replacement is bad.
 		// Experiment with using Flexmark Text Visitor, i.e. anything outside code blocks.
@@ -204,8 +206,8 @@ public class MarkdownEngine implements MarkupEngine {
 	private static class JiraIssueKeyVisitor implements Visitor<Text> {
 
 		/**
-		 * Derived by using {@link io.pivotal.migration.MigrationInfoApp} to dump descriptions
-		 * and comments for all issues and grepping for examples.
+		 * Derived by using {@link io.pivotal.jira.report.MarkupConverter} to dump
+		 * descriptions and comments for all issues and grepping for examples.
 		 */
 		private static final List<Character> excludedCharsBeforeJiraIssueKey =
 				Arrays.asList('/', '-', ':', '^', '@', '\\', '=', '"', '\'', '`');
