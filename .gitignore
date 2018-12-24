@@ -23,4 +23,5 @@ src/main/resources/application-local.properties
 .factorypath
 github-issue-mappings.properties
 github-migration-failures.txt
-imported-issues.properties
+issues-markup-source.txt
+issues-markup-target.txt

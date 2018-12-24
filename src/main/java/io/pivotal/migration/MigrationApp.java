@@ -43,7 +43,7 @@ import org.springframework.web.client.HttpClientErrorException;
 
 /**
  * @author Rob Winch
- * @see InfoGatheringApp
+ * @see MigrationInfoApp
  */
 @SpringBootApplication(scanBasePackages = "io.pivotal")
 public class MigrationApp implements CommandLineRunner {
@@ -68,6 +68,17 @@ public class MigrationApp implements CommandLineRunner {
 
 	@Override
 	public void run(String... strings) throws Exception {
+
+		// TODO markup:
+		// - if comment ends with horizontal line (e.g. "----"), remove it
+		// - tasks (/)(x)(!) -> [x][ ]
+		// - tables ||a||b|| -? |a|b|\n|:---|:---|
+		// - numbered lists #, ##, #* via Text Visitor
+
+		// TODO fields:
+		// - waiting for triage to "no fix version"
+		// - ignore assignees on backlog and waiting for triage versions
+		// - contributions welcome -> general backlog
 
 		File mappingsFile = new File("github-issue-mappings.properties");
 		File failuresFile = new File("github-migration-failures.txt");

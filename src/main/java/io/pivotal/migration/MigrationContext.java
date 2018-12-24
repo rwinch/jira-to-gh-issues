@@ -52,6 +52,7 @@ public class MigrationContext {
 
 
 	public void setPreviouslyImportedIssueMappings(Map<String, Integer> issueMappings) {
+		this.issueMappings.clear();
 		this.issueMappings.putAll(issueMappings);
 	}
 

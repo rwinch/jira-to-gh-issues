@@ -15,19 +15,12 @@
  */
 package io.pivotal.util;
 
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Paths;
-import java.util.Arrays;
-import java.util.List;
 import java.util.Map;
-import java.util.stream.Collectors;
 
 import io.pivotal.jira.JiraUser;
 import org.joda.time.DateTime;
+
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.core.io.Resource;
 import org.springframework.stereotype.Component;
 
 /**
@@ -52,22 +45,6 @@ public class MarkupManager {
 	public void configureUserLookup(Map<String, JiraUser> userLookup) {
 		this.markdown.configureUserLookup(userLookup);
 	}
-
-	/**
-	 *
-	 * @param resource
-	 * @throws IOException
-	 */
-	@Autowired
-	public void setUserMentionsToEscape(@Value("classpath:user-mentions-to-escape.txt") Resource resource) throws IOException {
-		List<String> userMentions = Files.lines(Paths.get(resource.getFile().getPath()))
-				.filter(line -> line.startsWith("mentions="))
-				.flatMap(line -> Arrays.stream(line.substring("mentions=".length()).split(",")))
-				.collect(Collectors.toList());
-		System.out.println("User mentions to be escaped in comments: " + userMentions);
-		this.markdown.setUserMentionsToEscape(userMentions);
-	}
-
 
 	public MarkupEngine engine(DateTime date) {
 		// Force markdown: it seems to work better currently than it might have originally.

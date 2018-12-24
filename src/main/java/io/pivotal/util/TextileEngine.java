@@ -54,11 +54,6 @@ public class TextileEngine implements MarkupEngine {
 		return text.replaceAll("\\[~([\\w]+)\\]", "[\"$1\":" + jiraBaseUrl + "/secure/ViewProfile.jspa?name=$1]");
 	}
 
-	@Override
-	public String convertBackportIssueSummary(String text) {
-		return text;
-	}
-
 	public static String blockCode(String str) {
 		String[] parts = str.split("\\{(quote|noformat|code).*?\\}");
 		if(parts.length == 1) {

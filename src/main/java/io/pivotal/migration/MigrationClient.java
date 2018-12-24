@@ -26,8 +26,6 @@ import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
 import java.util.function.Function;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
@@ -114,9 +112,6 @@ public class MigrationClient {
 
 	private final LabelHandler labelHandler;
 
-	/** Used to replace Jira issue keys that appear in comments with links */
-	private final Pattern jiraIssueKeyPattern;
-
 	/** For assignees */
 	Map<String, String> jiraToGithubUsername;
 
@@ -144,7 +139,6 @@ public class MigrationClient {
 		this.markup = markup;
 		this.milestoneFilter = milestoneFilter;
 		this.labelHandler = labelHandler;
-		this.jiraIssueKeyPattern = Pattern.compile("(" + jiraConfig.getProjectId() + "-[0-9]{1,5}+)");
 		this.repositoryIdProvider = RepositoryId.createFromId(this.config.getRepositorySlug());
 		this.importRequestBuilder = initImportRequestBuilder();
 	}
@@ -271,7 +265,7 @@ public class MigrationClient {
 				})
 				.collect(Collectors.toList());
 
-		logger.info("Starting to import (2 requests per issue/iteration) {} issues", importIssues.size());
+		logger.info("Starting to import {} issues (2 requests per issue/iteration)", importIssues.size());
 		ProgressTracker tracker1 = new ProgressTracker(importIssues.size(), 4, 200, logger.isDebugEnabled());
 		List<ImportedIssue> importedIssues = new ArrayList<>(importIssues.size());
 		for (int i = 0, issuesSize = importIssues.size(); i < issuesSize; i++) {
@@ -381,19 +375,16 @@ public class MigrationClient {
 		MarkupEngine engine = markup.engine(issue.getFields().getCreated());
 		JiraUser reporter = fields.getReporter();
 		String reporterLink = engine.link(reporter.getDisplayName(), reporter.getBrowserUrl());
-		String body = "**" + reporterLink + "** opened **" +
-				engine.link(issue.getKey(), issue.getBrowserUrl() + "?redirect=false") + "** and commented\n";
+		String jiraIssueLink = engine.link(issue.getKey(), issue.getBrowserUrl() + "?redirect=false");
+		String body = "**" + reporterLink + "** opened **" + jiraIssueLink + "** and commented\n";
 		if (fields.getReferenceUrl() != null) {
 			body += "\n_Reference URL:_\n" + fields.getReferenceUrl() + "\n";
 		}
 		if(fields.getDescription() != null) {
-			String description = replaceSprKeys(fields.getDescription(), engine, issue);
-			body += "\n" + engine.convert(description);
+			body += "\n" + engine.convert(fields.getDescription());
 		}
-		String jiraDetails = initJiraDetails(issue, engine);
-		if (!StringUtils.isEmpty(jiraDetails)) {
-			body += "\n\n---\n" + jiraDetails;
-		}
+		String jiraDetails = initJiraDetails(issue, engine, milestones);
+		body += "\n\n---\n" + (StringUtils.isEmpty(jiraDetails) ? "No further details from " + jiraIssueLink : jiraDetails);
 		ghIssue.setBody(body);
 
 		// From the Jira docs ("Working with workflows"):
@@ -408,7 +399,7 @@ public class MigrationClient {
 		if (closed) {
 			ghIssue.setClosedAt(updated);
 		}
-		// Avoid using actual assignees while in test mode
+		// Can't use actual assignees in test mode (they're probably not contributors in the test project)
 		if (!config.isDeleteCreateRepositorySlug()) {
 			JiraUser assignee = fields.getAssignee();
 			if (assignee != null) {
@@ -431,18 +422,7 @@ public class MigrationClient {
 		return ghIssue;
 	}
 
-	private String replaceSprKeys(String text, MarkupEngine engine, JiraIssue issue) {
-		Matcher matcher = jiraIssueKeyPattern.matcher(text);
-		StringBuffer sb = new StringBuffer();
-		while (matcher.find()) {
-			String key = matcher.group(1);
-			matcher.appendReplacement(sb, engine.link(key, issue.getBrowserUrlFor(key)));
-		}
-		matcher.appendTail(sb);
-		return sb.toString();
-	}
-
-	private String initJiraDetails(JiraIssue issue, MarkupEngine engine) {
+	private String initJiraDetails(JiraIssue issue, MarkupEngine engine, Map<String, Milestone> milestones) {
 		Fields fields = issue.getFields();
 		String jiraDetails = "";
 		JiraIssue parent = fields.getParent();
@@ -463,7 +443,9 @@ public class MigrationClient {
 		}
 		if (parent != null) {
 			String key = parent.getKey();
-			jiraDetails += "\nThis issue is a sub-task of " + engine.link(key, parent.getBrowserUrl()) + "\n";
+			String issueType = fields.getIssuetype().getName();
+			String subTaskType = "Backport".equalsIgnoreCase(issueType) ? "backport sub-task" : "sub-task";
+			jiraDetails += "\nThis issue is a " + subTaskType + " of " + engine.link(key, parent.getBrowserUrl()) + "\n";
 		}
 		if (!fields.getSubtasks().isEmpty()) {
 			jiraDetails += fields.getSubtasks().stream()
@@ -512,7 +494,18 @@ public class MigrationClient {
 			jiraDetails += references.stream().collect(Collectors.joining(", and ", "\n**Referenced from:** ", "\n"));
 		}
 		if (!issue.getBackportVersions().isEmpty()) {
-			jiraDetails += issue.getBackportVersions().stream().map(JiraFixVersion::getName)
+			jiraDetails += issue.getBackportVersions().stream()
+					.map(jiraFixVersion -> {
+						String name = jiraFixVersion.getName();
+						Milestone milestone = milestones.get(name);
+						if (milestone != null) {
+							String baseUrl = "https://github.com/" + config.getRepositorySlug();
+							return engine.link(name, baseUrl + "/milestone/" + milestone.getNumber() + "?closed=1");
+						}
+						else {
+							return name;
+						}
+					})
 					.collect(Collectors.joining(", ", "\n**Backported to:** ", "\n"));
 		}
 		int watchCount = issue.getFields().getWatches().getWatchCount();
@@ -530,8 +523,7 @@ public class MigrationClient {
 			GithubComment comment = new GithubComment();
 			String userUrl = jiraComment.getAuthor().getBrowserUrl();
 			String body = "**" + engine.link(jiraComment.getAuthor().getDisplayName(), userUrl) + "** commented\n\n";
-			String content = replaceSprKeys(jiraComment.getBody(), engine, issue);
-			body += engine.convert(content);
+			body += engine.convert(jiraComment.getBody());
 			comment.setBody(body);
 			comment.setCreatedAt(jiraComment.getCreated());
 			comments.add(comment);
@@ -643,12 +635,12 @@ public class MigrationClient {
 						context.addFailureMessage(milestone.getTitle() +
 								" backport issues holder is a missing the GitHub issue id for " + jiraKey + "\n");
 					}
-					MarkupEngine engine = markup.engine(jiraIssue.getFields().getCreated());
-					String summary = jiraIssue.getFields().getSummary();
-					summary = engine.convertBackportIssueSummary(summary);
-					return "**#" + ghIssueId + "** - " + summary;
+					return "- **#" + ghIssueId + "** - " + jiraIssue.getFields().getSummary();
 				})
 				.collect(Collectors.joining("\n"));
+		JiraIssue backportIssue = backportIssues.get(0);
+		MarkupEngine engine = markup.engine(backportIssue.getFields().getCreated());
+		body = engine.convert(body);
 		ghIssue.setBody(body);
 		return ghIssue;
 	}

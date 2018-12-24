@@ -15,7 +15,6 @@
  */
 package io.pivotal.util;
 
-import java.util.List;
 import java.util.Map;
 
 import io.pivotal.jira.JiraUser;
@@ -25,11 +24,6 @@ import io.pivotal.jira.JiraUser;
  *
  */
 public interface MarkupEngine {
-
-
-	default void setUserMentionsToEscape(List<String> userMentions) {
-		// no-op
-	}
 
 	/**
 	 * Configure a user key to JiraUser lookup, in order to allow showing the
@@ -44,5 +38,4 @@ public interface MarkupEngine {
 
 	String convert(String text);
 
-	String convertBackportIssueSummary(String text);
 }
