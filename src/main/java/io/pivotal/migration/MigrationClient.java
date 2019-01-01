@@ -378,10 +378,18 @@ public class MigrationClient {
 		String jiraIssueLink = engine.link(issue.getKey(), issue.getBrowserUrl() + "?redirect=false");
 		String body = "**" + reporterLink + "** opened **" + jiraIssueLink + "** and commented\n";
 		if (fields.getReferenceUrl() != null) {
-			body += "\n_Reference URL:_\n" + fields.getReferenceUrl() + "\n";
+			body += "\n**Reference URL:**\n" + fields.getReferenceUrl() + "\n";
 		}
-		if(fields.getDescription() != null) {
-			body += "\n" + engine.convert(fields.getDescription());
+		String description = fields.getDescription();
+		if(description != null) {
+			// Remove trailing horizontal line
+			int index = description.lastIndexOf("----");
+			if (index != -1) {
+				if (index + 4 == description.length() || description.substring(index + 4).matches("[\\s]*")) {
+					description = description.substring(0, index);
+				}
+			}
+			body += "\n" + engine.convert(description);
 		}
 		String jiraDetails = initJiraDetails(issue, engine, milestones);
 		body += "\n\n---\n" + (StringUtils.isEmpty(jiraDetails) ? "No further details from " + jiraIssueLink : jiraDetails);

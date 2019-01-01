@@ -21,8 +21,14 @@ import java.util.List;
 import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
+import com.vladsch.flexmark.ast.Document;
+import com.vladsch.flexmark.ast.Emphasis;
+import com.vladsch.flexmark.ast.HtmlBlock;
+import com.vladsch.flexmark.ast.HtmlCommentBlock;
 import com.vladsch.flexmark.ast.HtmlInline;
+import com.vladsch.flexmark.ast.HtmlInlineComment;
 import com.vladsch.flexmark.ast.Link;
 import com.vladsch.flexmark.ast.LinkRef;
 import com.vladsch.flexmark.ast.Node;
@@ -32,8 +38,10 @@ import com.vladsch.flexmark.ast.VisitHandler;
 import com.vladsch.flexmark.ast.Visitor;
 import com.vladsch.flexmark.formatter.internal.Formatter;
 import com.vladsch.flexmark.parser.Parser;
+import com.vladsch.flexmark.parser.block.NodePostProcessor;
+import com.vladsch.flexmark.parser.block.NodePostProcessorFactory;
+import com.vladsch.flexmark.util.NodeTracker;
 import com.vladsch.flexmark.util.sequence.BasedSequence;
-import com.vladsch.flexmark.util.sequence.CharSubSequence;
 import io.pivotal.jira.JiraConfig;
 import io.pivotal.jira.JiraUser;
 import lombok.Data;
@@ -51,23 +59,30 @@ import org.springframework.util.StringUtils;
 @Component
 public class MarkdownEngine implements MarkupEngine {
 
-	private static final Pattern jiraMentionPattern = Pattern.compile("\\[~([^]]+)]");
+	private static final Pattern jiraUserMentionPattern = Pattern.compile("\\[~([^]]+)]");
+
+	private static final Pattern tablesPattern = Pattern.compile("(?m)^[ \\t]*(\\|\\|.*\\|\\|)[ \\t]*$");
 
 
 	String jiraBaseUrl;
 
 	private Map<String, JiraUser> userLookup = new HashMap<>();
 
-	// Flexmark Parser/Formatter/NodeVisitor to further manipulate the converted markdown content
-	private final Parser parser = Parser.builder().build();
+	/** Escape/suppress emphasis over multiple lines, ahead of other transformations. */
+	private Parser phase1Parser;
+	/** All other transformations. */
+	private Parser phase2Parser;
+	/** Render transformed markdown */
 	private final Formatter formatter = Formatter.builder().build();
-	private NodeVisitor visitor;
+	/** For things that can't be done as easily with a post processor */
+	private final NodeVisitor visitor = new NodeVisitor(new VisitHandler<>(Link.class, new InlineLinkVisitor()));
 
 
 	@Autowired
 	public void setJiraConfig(JiraConfig jiraConfig) {
 		this.jiraBaseUrl = jiraConfig.getBaseUrl();
-		this.visitor = new MigrationNodeVisitor(jiraConfig);
+		phase1Parser = Parser.builder().postProcessorFactory(new Phase1NodePostProcessorFactory()).build();
+		phase2Parser = Parser.builder().postProcessorFactory(new Phase2NodePostProcessorFactory(jiraConfig)).build();
 	}
 
 	@Override
@@ -82,60 +97,77 @@ public class MarkdownEngine implements MarkupEngine {
 
 	@Override
 	public String convert(String text) {
-		Assert.notNull(this.visitor, "NodeVisitor is not initialized. Was JiraConfig not autowired?");
+
+		Assert.notNull(this.phase1Parser, "phase1Parser not initialized.");
+		Assert.notNull(this.phase2Parser, "phase2Parser not initialized.");
+
 		if (!StringUtils.hasLength(text)) {
 			return "";
 		}
-		text = header(text);
-		text = text.replaceAll("\\{(code|noformat)(:(\\w+))?(?:(:|\\|)\\w+=.+?)*\\}", "```$3 ");
+
+		// Lists and headings (in that order!)
+		text = lists(text);
+		text = headings(text);
+		text = tables(text);
+		text = text.replaceAll("(?m)^[ ]{0,3}---[ \\t]*$", "&mdash;");
+
+		// Code
+		text = text.replaceAll("\\{\\{(.+?)\\}\\}", "`$1`"); // inline code
+		text = text.replaceAll("\\{(code|noformat|panel)(:(\\w+))?(?:(:|\\|)\\w+=.+?)*\\}", "```$3 ");
 		text = text.replaceAll("(```\\w*) (.+)", "$1\n$2");
 		text = text.replaceAll("(.)(```) ", "$1\n$2");
-		text = text.replaceAll("\\{(color)(:((#)?\\w+))?(?:(:|\\|)\\w+=.+?)*\\}", "");
-		text = quote(text); // quote blocks
+
+		// Quotes
+		text = quoteBlocks(text);
 		text = text.replaceAll("(?m)^[ \\t]*bq\\.", "> "); // single line quotes
-		text = text.replaceAll("\\[(.+?)\\|(http.*?)\\]", "[$1]($2)"); // convert links
-		text = text.replaceAll("\\{\\{(.+?)\\}\\}", "`$1`"); // inline code
+		text = text.replaceAll("\\{(color)(:((#)?\\w+))?(?:(:|\\|)\\w+=.+?)*\\}", ""); // color tags
+
+		text = text.replaceAll("\\[(.+?)\\|(http.*?)\\]", "[$1]($2)"); // links
 		text = replaceUserKeyWithDisplayNameInJiraUserMentions(text);
 
-		// TODO:
-		// Ordered lists should be handled from a Flexmark Text Visitor, i.e. to avoid changing code blocks
-		// Also take into account nested lists, i.e. ##, #*
-		// text = text.replaceAll("(?m)^[ \\t]*# ", "- ");   // ordered
+		do {
+			Node node = phase1Parser.parse(text);
+			text = formatter.render(node);
+		}
+		while (phase1PostProcessor.keepProcessing());
 
-		// Formatting issues: SPR-5079, SPR-7655, SPR-11393 (table, nested bullets) | SPR-1987
-
-		// TODO:
-		// Unordered lists mess with "*" in pasted Javadoc so brute force replacement is bad.
-		// Experiment with using Flexmark Text Visitor, i.e. anything outside code blocks.
-		// text = text.replaceAll("(?m)^[ \\t]*\\* ", "- "); // unordered
-
-		// Apply markdown parser/formatter
-		Node node = parser.parse(text);
+		Node node = phase2Parser.parse(text);
 		visitor.visit(node);
 		text = formatter.render(node);
 
 		return text;
 	}
 
-	private String replaceUserKeyWithDisplayNameInJiraUserMentions(String text) {
-		Matcher matcher = jiraMentionPattern.matcher(text);
-		StringBuffer sb = new StringBuffer();
-		while (matcher.find()) {
-			String key = matcher.group(1);
-			JiraUser user = this.userLookup.computeIfAbsent(key, k -> {
-				JiraUser u = new JiraUser();
-				u.setKey(k);
-				u.setDisplayName(k);
-				u.setSelf(this.jiraBaseUrl);
-				return u;
-			});
-			matcher.appendReplacement(sb, "[" + user.getDisplayName() + "](" + user.getBrowserUrl() + ")");
-		}
-		matcher.appendTail(sb);
-		return sb.toString();
+	private String lists(String text) {
+
+		// Tasks in lists (lists handled separately below)
+		text = text.replaceAll("(?m)^[ \\t]*(([#]{1,2}+|[-]{1,2}+)([-]{0,2}|[*]{0,2}) )(\\(x\\))", "$1[ ]");
+		text = text.replaceAll("(?m)^[ \\t]*(([#]{1,2}+|[-]{1,2}+)([-]{0,2}|[*]{0,2}) )(\\(/\\))", "$1[x]");
+		text = text.replaceAll("(?m)^[ \\t]*(([#]{1,2}+|[-]{1,2}+)([-]{0,2}|[*]{0,2}) )(\\(!\\))", "$1[ ]");
+
+		// Ordered lists
+		// Replacing "#" and "##" disrupts a small number of code snippets, but the impact is small,
+		// Empirically in SPR most occurrences of "#" in the beginning of a line are numbered lists.
+		// If left alone, unless those are in code blocks, they would be interpreted as headings in
+		// markdown and would look even worse. It's also why we can't do this in a Flexmark Text node
+		// processor (they're seen as headings by the Flexmark parser).
+		text = text.replaceAll("(?m)^[ \\t]*# ",       "1. ");
+		text = text.replaceAll("(?m)^[ \\t]*## ",      "   1. ");
+		text = text.replaceAll("(?m)^[ \\t]*#- ",      "   - ");
+		text = text.replaceAll("(?m)^[ \\t]*#\\* ",    "   * ");
+		text = text.replaceAll("(?m)^[ \\t]*### ",     "      1. ");
+		text = text.replaceAll("(?m)^[ \\t]*#-- ",     "      - ");
+		text = text.replaceAll("(?m)^[ \\t]*#\\*\\* ", "      * ");
+
+		// Unordered lists:
+		// No need to convert "-" or "* " (same in Markdown)..
+		// For nested lists (e.g. "** ", "-- ", etc) we use a Flexmark Text node processor later on,
+		// in order to avoid disrupting occurrences in code blocks.
+
+		return text;
 	}
 
-	private String header(String text) {
+	private String headings(String text) {
 		text = text.replaceAll("(?m)^h1. ", "# ");
 		text = text.replaceAll("(?m)^h2. ", "## ");
 		text = text.replaceAll("(?m)^h3. ", "### ");
@@ -145,160 +177,267 @@ public class MarkdownEngine implements MarkupEngine {
 		return text;
 	}
 
-	private static String quote(String str) {
-		String[] parts = str.split("\\{quote\\}");
+	private String tables(String text) {
+		Matcher matcher = tablesPattern.matcher(text);
+		StringBuffer sb = null;
+		while (matcher.find()) {
+			String[] headings = matcher.group(1).split("\\|\\|");
+			headings = Arrays.copyOfRange(headings, 1, headings.length);
+			String row1 = Arrays.stream(headings).map(String::trim).collect(Collectors.joining("|", "|", "|\n"));
+			String row2 = Arrays.stream(headings).map(s -> ":---").collect(Collectors.joining("|", "|", "|"));
+			sb = sb != null ? sb : new StringBuffer();
+			matcher.appendReplacement(sb, row1 + row2);
+		}
+		if (sb == null) {
+			return text;
+		}
+		matcher.appendTail(sb);
+		return sb.toString();
+	}
 
+	private static String quoteBlocks(String str) {
+		String[] parts = str.split("\\{quote\\}");
 		for (int i = 1; i < parts.length; i += 2) {
 			parts[i] = "\n > " + parts[i].replaceAll("\n", "\n> ");
 		}
 		return StringUtils.arrayToDelimitedString(parts, "");
 	}
 
-
-	private static class MigrationNodeVisitor extends NodeVisitor {
-
-		private static final String jiraProjectIds =
-				"(GREENHOUSE|IMPALA|GRADLE|SHDPADMIN|AMQP|AMQPNET|BATCH|BATCHADM|FLEX|DATAAERO|DATACOL|DATACMNS|DATACOUCH|DATAES|DATACASS|DATASOLR|SGF|DATAGEODE|DATAHB|DATAJDBC|DATAJPA|DATAKV|DATALDAP|DATAMAP|DATAMONGO|DATAGRAPH|DATAREDIS|DATAREST|DATARIAK|ANDROID|SHDP|SPR|SGFNET|IDE|INT|INTEXT|INTDSLGROOVY|INTROO|INTSAMPLES|INTSCALA|INTTEMPLATES|SJC|LDAP|SMA|MOBILE|MOD|OSGI|SPS|RCP|ROO|ROOFLEX|SCALA|SEC|SECOAUTH|SHL|SLICE|SOCIAL|SOCIALFB|SOCIALGH|SOCIALLI|SOCIALTI|SOCIALTW|STS|SWF|SWS|XD|SPRNET|SPRNETCODECONFIG|SPRNETREST|SPRNETSOCIAL|SPRNETSOCIALDB|SPRNETSOCIALFB|SPRNETSOCIALLI|SPRNETSOCIALTW|SPRNETVSADDIN|SESPRINGACTIONSCRIPTAS|SEBLOB|SECOUCHDB|SEDBFONET|SEDBFO|SE|SEBATCHNET|SECONFIGNET|SENMSNET|SERICHCLIENTNET|SETHREADNET|SESIA|SESPRINGINTEGRATIONNET|SEJCR|SESPRINGPYTHONPY|SES|SESQLJ|SESURF|SEWORKFLOW|SEWPFNET)";
-
-		private static final Pattern jiraKeyPattern = Pattern.compile("(" + jiraProjectIds + "-[0-9]{1,5}+)");
-
-
-		MigrationNodeVisitor(JiraConfig jiraConfig) {
-			super(initVisitHandlers(jiraConfig));
+	private String replaceUserKeyWithDisplayNameInJiraUserMentions(String text) {
+		Matcher matcher = jiraUserMentionPattern.matcher(text);
+		StringBuffer sb = null;
+		while (matcher.find()) {
+			String key = matcher.group(1);
+			JiraUser user = this.userLookup.computeIfAbsent(key, k -> {
+				JiraUser u = new JiraUser();
+				u.setKey(k);
+				u.setDisplayName(k);
+				u.setSelf(this.jiraBaseUrl);
+				return u;
+			});
+			sb = sb != null ? sb : new StringBuffer();
+			matcher.appendReplacement(sb, "[" + user.getDisplayName() + "](" + user.getBrowserUrl() + ")");
 		}
-
-		private static List<VisitHandler<?>> initVisitHandlers(JiraConfig jiraConfig) {
-			String baseIssueUrl = jiraConfig.getBaseUrl() + "/browse/";
-			GitHubUserMentionVisitor gitHubMentionVisitor = new GitHubUserMentionVisitor();
-			JiraIssueKeyVisitor issueKeyVisitor = new JiraIssueKeyVisitor(jiraKeyPattern, baseIssueUrl);
-			return Arrays.asList(
-					new VisitHandler<>(Text.class, text -> {
-						gitHubMentionVisitor.visit(text);
-						issueKeyVisitor.visit(text);
-					}),
-					new VisitHandler<>(LinkRef.class, new ReferenceStyleLinkVisitor(jiraKeyPattern, baseIssueUrl)),
-					new VisitHandler<>(Link.class, new InlineLinkVisitor()));
+		if (sb == null) {
+			return text;
 		}
+		matcher.appendTail(sb);
+		return sb.toString();
 	}
 
 
-	/**
-	 * Escape "@"-prefixed content to avoid incidental GitHub user mentions.
-	 * Note that it's okay if we escape inside an already escaped sequence, as Flexmark
-	 * seems to do the right thing and drop the added "`".
-	 */
-	private static class GitHubUserMentionVisitor implements Visitor<Text> {
+	private static final Phase1NodePostProcessor phase1PostProcessor = new Phase1NodePostProcessor();
 
-		private static final Pattern ghMentionPattern = Pattern.compile("(^|[^\\w])(@[\\w-]+)");
+	private static class Phase1NodePostProcessorFactory extends NodePostProcessorFactory {
+
+		Phase1NodePostProcessorFactory() {
+			super(false);
+			addNodes(Emphasis.class);
+			addNodes(Text.class);
+		}
 
 		@Override
-		public void visit(Text textNode) {
-			String result = ghMentionPattern.matcher(textNode.getChars()).replaceAll("$1`$2`");
-			textNode.setChars(CharSubSequence.of(result));
+		public NodePostProcessor create(Document document) {
+			phase1PostProcessor.reset();
+			return phase1PostProcessor;
 		}
 	}
 
-	/**
-	 * Replace Jira issue keys which would be formatted as links in Jira.
-	 * However, it's not a simple replacement of all occurrences.
-	 * See tests for details.
-	 */
-	private static class JiraIssueKeyVisitor implements Visitor<Text> {
+
+	private static class Phase1NodePostProcessor extends NodePostProcessor {
+
+		private int modificationCount = 0;
+
+
+		boolean keepProcessing() {
+			return modificationCount > 0;
+		}
+
+		void reset() {
+			modificationCount = 0;
+		}
+
+		@Override
+		public void process(NodeTracker state, Node node) {
+			String content = node.getChars().toString();
+			if (node instanceof Emphasis) {
+				// "*/*" - media type related, not properly escaped, not rendering correctly even in Jira
+				if (content.equals("*/*")) {
+					replaceNodeWithText(state, node, "\\*/\\*");
+				}
+				// "*."  - majority of these are package statements or aspectj pointcuts
+				else if (content.equals("*.*")) {
+					replaceNodeWithText(state, node, "\\*.\\*");
+				}
+				// "\n"  - emphasis over multiple lines is legal but in 99% of cases not actually an emphasis
+				else if (content.contains("\n")) {
+					modificationCount++;
+					content = "\\" + content;
+					replaceNodeWithText(state, node, content);
+				}
+			}
+		}
+
+		private void replaceNodeWithText(NodeTracker state, Node node, String content) {
+			Text text = new Text(content);
+			node.insertAfter(text);
+			state.nodeAdded(text);
+			node.unlink();
+			state.nodeRemoved(node);
+		}
+	}
+
+
+	private static class Phase2NodePostProcessorFactory extends NodePostProcessorFactory {
+
+		private final JiraConfig jiraConfig;
+
+
+		Phase2NodePostProcessorFactory(JiraConfig jiraConfig) {
+			super(false);
+			this.jiraConfig = jiraConfig;
+			addNodes(Emphasis.class);
+			addNodes(HtmlBlock.class, HtmlCommentBlock.class, HtmlInline.class, HtmlInlineComment.class);
+			addNodes(LinkRef.class);
+			addNodes(Text.class);
+		}
+
+		@Override
+		public NodePostProcessor create(Document document) {
+			return new Phase2NodePostProcessor(jiraConfig);
+		}
+	}
+
+
+	private static class Phase2NodePostProcessor extends NodePostProcessor {
+
+		private static final Pattern ghUserMentionPattern = Pattern.compile("(^|[^\\w])(@[\\w-]+)");
+
+		private static final Pattern jiraKeyPattern = Pattern.compile("(" +
+				"(GREENHOUSE|IMPALA|GRADLE|SHDPADMIN|AMQP|AMQPNET|BATCH|" +
+				"BATCHADM|FLEX|DATAAERO|DATACOL|DATACMNS|DATACOUCH|DATAES|DATACASS|DATASOLR|SGF|DATAGEODE|DATAHB|" +
+				"DATAJDBC|DATAJPA|DATAKV|DATALDAP|DATAMAP|DATAMONGO|DATAGRAPH|DATAREDIS|DATAREST|DATARIAK|ANDROID|" +
+				"SHDP|SPR|SGFNET|IDE|INT|INTEXT|INTDSLGROOVY|INTROO|INTSAMPLES|INTSCALA|INTTEMPLATES|SJC|LDAP|SMA|" +
+				"MOBILE|MOD|OSGI|SPS|RCP|ROO|ROOFLEX|SCALA|SEC|SECOAUTH|SHL|SLICE|SOCIAL|SOCIALFB|SOCIALGH|" +
+				"SOCIALLI|SOCIALTI|SOCIALTW|STS|SWF|SWS|XD|SPRNET|SPRNETCODECONFIG|SPRNETREST|SPRNETSOCIAL|" +
+				"SPRNETSOCIALDB|SPRNETSOCIALFB|SPRNETSOCIALLI|SPRNETSOCIALTW|SPRNETVSADDIN|SESPRINGACTIONSCRIPTAS|" +
+				"SEBLOB|SECOUCHDB|SEDBFONET|SEDBFO|SE|SEBATCHNET|SECONFIGNET|SENMSNET|SERICHCLIENTNET|SETHREADNET|" +
+				"SESIA|SESPRINGINTEGRATIONNET|SEJCR|SESPRINGPYTHONPY|SES|SESQLJ|SESURF|SEWORKFLOW|SEWPFNET)"+
+				"-[0-9]{1,5}+)");
 
 		/**
 		 * Derived by using {@link io.pivotal.jira.report.MarkupConverter} to dump
 		 * descriptions and comments for all issues and grepping for examples.
 		 */
-		private static final List<Character> excludedCharsBeforeJiraIssueKey =
+		private static final List<Character> skipCharsPrecedingJiraIssueKey =
 				Arrays.asList('/', '-', ':', '^', '@', '\\', '=', '"', '\'', '`');
 
 
-		private final Pattern jiraIssueKeyPattern;
-
-		private final String issueBaseUrl;
+		private final String jiraIssueBaseUrl;
 
 
-		JiraIssueKeyVisitor(Pattern jiraIssueKeyPattern, String issueBaseUrl) {
-			this.jiraIssueKeyPattern = jiraIssueKeyPattern;
-			this.issueBaseUrl = issueBaseUrl;
+		Phase2NodePostProcessor(JiraConfig jiraConfig) {
+			this.jiraIssueBaseUrl = jiraConfig.getBaseUrl() + "/browse/";
 		}
 
+
 		@Override
-		public void visit(Text text) {
-			Matcher matcher = jiraIssueKeyPattern.matcher(text.getChars());
+		public void process(NodeTracker state, Node node) {
+			String content = node.getChars().toString();
+			if (node instanceof Text) {
+				content = applyGhUserMentionPattern(content);
+				content = replaceJiraKeysWithLinks(node, content);
+				// Unordered lists:
+				// no need to convert "-" or "* " (same in Markdown).
+				content = content.replaceAll("(?m)^[ \\t]*\\*\\* ", "   * ");
+				content = content.replaceAll("(?m)^[ \\t]*-- ",     "   - ");
+				content = content.replaceAll("(?m)^[ \\t]*-# ",     "   1. ");
+				content = content.replaceAll("(?m)^[ \\t]*\\*# ",   "   1. ");
+			}
+			else if (node instanceof LinkRef) {
+				if (content.startsWith("[http://") || content.startsWith("[https://")) {
+					// For Jira these are a variation on a link that doesn't have an alias
+					// but in markdown they're reference-style links and are rendered with
+					// the square brackets, so remove the brackets.
+					content = content.substring(1, content.length() - 1);
+				}
+				else {
+					String s = content.substring(1, content.length() - 1);
+					if (jiraKeyPattern.matcher(s).matches()) {
+						content = getJiraIssueUrl(s);
+					}
+				}
+			}
+			else if (node instanceof Emphasis){
+				if (content.charAt(0) == '*' && content.charAt(content.length()-1) == '*') {
+					// Jira bold "*" to markdown bold "**"
+					content = content.substring(1, content.length() - 1);
+					content = applyGhUserMentionPattern(content);
+					content = "**" + content + "**";
+				}
+				// else: emphasis with "_"
+			}
+			else if (node instanceof HtmlBlock || node instanceof HtmlCommentBlock ||
+					node instanceof HtmlInline || node instanceof HtmlInlineComment) {
+
+				if (content.startsWith("<a ") || content.equals("</a>")) {
+					return;
+				}
+				content = content.replaceAll("<", "\\\\<");
+			}
+			replaceNodeWithText(state, node, content);
+		}
+
+		private String applyGhUserMentionPattern(String text) {
+			// Escape "@"-prefixed content to avoid incidental GitHub user mentions.
+			return ghUserMentionPattern.matcher(text).replaceAll("$1`$2`");
+		}
+
+		private String replaceJiraKeysWithLinks(Node node, String text) {
+			Matcher matcher = jiraKeyPattern.matcher(text);
 			StringBuffer sb = null;
 			while (matcher.find()) {
 				String key = matcher.group(1);
 				sb = sb != null ? sb : new StringBuffer();
-				if (isPrevExcluded(text, matcher) || isNextExcluded(text, matcher) || isWithinAnchor(text, matcher)) {
+				if (skipJiraKeyMatch(matcher, text, node)) {
 					matcher.appendReplacement(sb, key);
 				}
 				else {
-					matcher.appendReplacement(sb, "[" + key + "](" + issueBaseUrl + key + ")");
+					matcher.appendReplacement(sb, getJiraIssueUrl(key));
 				}
 			}
 			if (sb != null) {
 				matcher.appendTail(sb);
-				text.setChars(CharSubSequence.of(sb));
+				return sb.toString();
 			}
+			return text;
 		}
 
-		private static boolean isPrevExcluded(Text text, Matcher matcher) {
+		private static boolean skipJiraKeyMatch(Matcher matcher, String text, Node node) {
 			int start = matcher.start();
-			Character prev = start > 0 ? text.getChars().charAt(start - 1) : null;
-			return prev != null && excludedCharsBeforeJiraIssueKey.contains(prev);
-		}
-
-		private static boolean isNextExcluded(Text text, Matcher matcher) {
 			int end = matcher.end();
-			Character next = end < text.getChars().length() ? text.getChars().charAt(end) : null;
-			return next != null && next == '-';
+			Character prevChar = start > 0 ? text.charAt(start - 1) : null;
+			Character nextChar = end < text.length() ? text.charAt(end) : null;
+			Node prevNode = node.getPrevious();
+			return prevChar != null && skipCharsPrecedingJiraIssueKey.contains(prevChar) ||
+					nextChar != null && nextChar == '-' ||
+					matcher.start() == 0 && prevNode instanceof HtmlInline && prevNode.getChars().startsWith("<a");
 		}
 
-		private static boolean isWithinAnchor(Text text, Matcher matcher) {
-			return matcher.start() == 0 && text.getPrevious() instanceof HtmlInline &&
-					text.getPrevious().getChars().startsWith("<a");
-		}
-	}
-
-	/**
-	 * Visit Markdown reference-style links and:
-	 * 1) Remove surrounding square brackets if the content between them is a URL.
-	 * Such links were not meant to be Markdown reference-style link.
-	 * 2) Replace Jira issue keys surrounded with square brackets with a link to the issue.
-	 */
-	private static class ReferenceStyleLinkVisitor implements Visitor<LinkRef> {
-
-		private final Pattern jiraKeyPattern;
-
-		private final String issueBaseUrl;
-
-		ReferenceStyleLinkVisitor(Pattern jiraKeyPattern, String issueBaseUrl) {
-			this.jiraKeyPattern = jiraKeyPattern;
-			this.issueBaseUrl = issueBaseUrl;
+		private String getJiraIssueUrl(String content) {
+			return "[" + content + "](" + jiraIssueBaseUrl + content + ")";
 		}
 
-		@Override
-		public void visit(LinkRef linkRef) {
-			BasedSequence sequence = linkRef.getChars();
-			if (sequence.startsWith("[http://") || sequence.startsWith("[https://")) {
-				sequence = sequence.subSequence(1, sequence.length() - 1);
-				linkRef.setChars(sequence);
-			}
-			else {
-				BasedSequence content = sequence.subSequence(1, sequence.length() - 1);
-				if (jiraKeyPattern.matcher(content).matches()) {
-					String issueLink = "[" + content + "](" + issueBaseUrl + content + ")";
-					linkRef.setChars(CharSubSequence.of(issueLink));
-				}
-			}
+		private void replaceNodeWithText(NodeTracker state, Node node, String content) {
+			Text text = new Text(content);
+			node.insertAfter(text);
+			state.nodeAdded(text);
+			node.unlink();
+			state.nodeRemoved(node);
 		}
 	}
 
-	/**
-	 * Remove square brackets around Markdown inline links, if we end up with any
-	 * after the conversion.
-	 */
+
 	private static class InlineLinkVisitor implements Visitor<Link> {
 
 		@Override

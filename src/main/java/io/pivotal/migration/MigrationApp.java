@@ -70,12 +70,6 @@ public class MigrationApp implements CommandLineRunner {
 	@Override
 	public void run(String... strings) throws Exception {
 
-		// TODO markup:
-		// - if comment ends with horizontal line (e.g. "----"), remove it
-		// - tasks (/)(x)(!) -> [x][ ]
-		// - tables ||a||b|| -? |a|b|\n|:---|:---|
-		// - numbered lists #, ##, #* via Text Visitor
-
 		// TODO fields:
 		// - "no fix version" -> waiting for triage
 		// - drop assignees from backlog and waiting for triage versions

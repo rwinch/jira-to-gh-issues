@@ -31,7 +31,7 @@ import static org.assertj.core.api.Assertions.*;
  *
  */
 public class MarkdownEngineTests {
-	MarkdownEngine engine;
+	private MarkdownEngine engine;
 
 	@Before
 	public void setup() {
@@ -40,6 +40,128 @@ public class MarkdownEngineTests {
 		jiraConfig.setBaseUrl("https://jira.spring.io");
 		jiraConfig.setProjectId("SPR");
 		engine.setJiraConfig(jiraConfig);
+	}
+
+	@Test
+	public void orderedListWithNestedItemsAndTasks() {
+		String body =
+				"# (x) Introduce a set of common...\n" +
+				"# (x) Special consideration should be taken...\n" +
+				"#- The framework provides support for...\n" +
+				"#- Component annotations:\n" +
+				"#-- {{@Component}}\n" +
+				"#-- {{@Service}}\n" +
+				"#-- {{@Repository}}\n" +
+				"#-- {{@Controller}}\n" +
+				"#-- {{@ControllerAdvice}}\n" +
+				"#-- {{@RestController}}\n" +
+				"#-- {{@Configuration}}\n" +
+				"# (/) For each annotation...\n" +
+				"#- Ensure that the annotation has...\n" +
+				"#- Ensure that the alias name...\n" +
+				"#-- For example, something as generic as...\n" +
+				"#- Review the Javadoc for...\n" +
+				"#- Ensure that all code in the framework...\n";
+
+		assertThat(engine.convert(body)).isEqualTo(
+				"1. [ ] Introduce a set of common...\n" +
+				"2. [ ] Special consideration should be taken...\n" +
+				"   - The framework provides support for...\n" +
+				"   - Component annotations:\n" +
+				"     - `@Component`\n" +
+				"     - `@Service`\n" +
+				"     - `@Repository`\n" +
+				"     - `@Controller`\n" +
+				"     - `@ControllerAdvice`\n" +
+				"     - `@RestController`\n" +
+				"     - `@Configuration`\n" +
+				"3. [x] For each annotation...\n" +
+				"   - Ensure that the annotation has...\n" +
+				"   - Ensure that the alias name...\n" +
+				"     - For example, something as generic as...\n" +
+				"   - Review the Javadoc for...\n" +
+				"   - Ensure that all code in the framework...\n\n");
+	}
+
+	@Test
+	public void orderedListNested() {
+		String body =
+				"# BusBeanFactoryPostProcessor is constructed\n" +
+				"# BusBeanFactoryPostProcessor.postProcessBeanFactory is called...\n" +
+				"# Bus is constructed\n" +
+				"# MyServerManager is constructed\n" +
+				"# MyServerManager is injected with the bus, and the serverManager is set on the bus\n" +
+				"# MyServerManager.afterPropertiesSet is called, which in effect... As a result:\n" +
+				"## MyServerFactoryBean is constructed\n" +
+				"## MyServerFactoryBean.afterPropertiesSet() is called:\n" +
+				"### MyServer is created and started, creating a new Thread (threadcount=1)\n" +
+				"### MyServerFactoryBean inspects the application context for the Bus, ...\n" +
+				"### The BindingInfo returned is still null, resulting in a ...\n";
+
+		assertThat(engine.convert(body)).isEqualTo(
+				"1. BusBeanFactoryPostProcessor is constructed\n" +
+				"2. BusBeanFactoryPostProcessor.postProcessBeanFactory is called...\n" +
+				"3. Bus is constructed\n" +
+				"4. MyServerManager is constructed\n" +
+				"5. MyServerManager is injected with the bus, and the serverManager is set on the bus\n" +
+				"6. MyServerManager.afterPropertiesSet is called, which in effect... As a result:\n" +
+				"   1. MyServerFactoryBean is constructed\n" +
+				"   2. MyServerFactoryBean.afterPropertiesSet() is called:\n" +
+				"      1. MyServer is created and started, creating a new Thread (threadcount=1)\n" +
+				"      2. MyServerFactoryBean inspects the application context for the Bus, ...\n" +
+				"      3. The BindingInfo returned is still null, resulting in a ...\n\n"
+		);
+	}
+
+	@Test
+	public void unorderedListWithTasks() {
+		String body =
+				"- (/) Refactor the implementation of...\n" +
+				"   1. look up _by type_ and _qualifier_ (from {{@Transactional}})\n" +
+				"   2. else, look up _by type_ and _explicit name_ (from {{@TransactionConfiguration}})\n" +
+				"   3. else, look up single bean _by type_\n" +
+				"   4. else, look up _by type_ and _default name_ (from {{@TransactionConfiguration}})\n" +
+				"- (/) Update the Javadoc for {{@TransactionalTestExecutionListener}}.\n" +
+				"- (/) Update the Javadoc for {{@TransactionConfiguration}}.\n" +
+				"- (/) Update the _Testing_ chapter of the Reference Manual accordingly.\n" +
+				"- (/) Update the changelog accordingly.\n" +
+				"- (/) {{MergedContextConfiguration}} should have ...\n" +
+				"- (/) {{MergedContextConfiguration}} should provide ...\n" +
+				"-- (/) {{MergedContextConfiguration}} will need ...\n";
+
+		assertThat(engine.convert(body)).isEqualTo(
+				"- [x] Refactor the implementation of...\n" +
+				"  1. look up _by type_ and _qualifier_ (from `@Transactional`)\n" +
+				"  2. else, look up _by type_ and _explicit name_ (from `@TransactionConfiguration`)\n" +
+				"  3. else, look up single bean _by type_\n" +
+				"  4. else, look up _by type_ and _default name_ (from `@TransactionConfiguration`)\n" +
+				"- [x] Update the Javadoc for `@TransactionalTestExecutionListener`.\n" +
+				"- [x] Update the Javadoc for `@TransactionConfiguration`.\n" +
+				"- [x] Update the _Testing_ chapter of the Reference Manual accordingly.\n" +
+				"- [x] Update the changelog accordingly.\n" +
+				"- [x] `MergedContextConfiguration` should have ...\n" +
+				"- [x] `MergedContextConfiguration` should provide ...\n" +
+				"  - [x] `MergedContextConfiguration` will need ...\n\n");
+	}
+
+	@Test
+	public void unorderedListNested() {
+		String body =
+				"h3. Proposal\n" +
+				"* Create an interface which implements the simplified Errors interface\n" +
+				"** Can be instantiated with the target object only\n" +
+				"** Doesn't necessary have to store all the rejected properties, tracking if there was any errors might be enough\n" +
+				"* Create an abstract class which implements Validator\n" +
+				"** Boolean validate(Object target) is implemented here\n";
+
+		assertThat(engine.convert(body)).isEqualTo(
+				"### Proposal\n" +
+				"\n" +
+				"* Create an interface which implements the simplified Errors interface\n" +
+				"  * Can be instantiated with the target object only\n" +
+				"  * Doesn't necessary have to store all the rejected properties, tracking if there was any errors might be enough\n" +
+				"* Create an abstract class which implements Validator\n" +
+				"  * Boolean validate(Object target) is implemented here\n\n");
 	}
 
 	@Test
@@ -79,6 +201,20 @@ public class MarkdownEngineTests {
 	}
 
 	@Test
+	public void horizontalRuleMisinterpretation() {
+		// In Jira "---" produces em-dash (—) but in Markdown that's a horizontal rule
+		String body =
+				"Now that I have found the culprit I can use a setup that works.\n\n" +
+				"---\n\n" +
+				"Having said that...";
+
+		assertThat(engine.convert(body)).isEqualTo(
+				"Now that I have found the culprit I can use a setup that works.\n\n" +
+				"&mdash;\n\n" +
+				"Having said that...\n");
+	}
+
+	@Test
 	public void twoLinks() {
 		String body =
 				" a [fix|https://fisheye.springsource.org/changelog/spring-security?cs=ffe2834f4cd900d99c4a490af62613d087c9aceb] the " +
@@ -86,6 +222,28 @@ public class MarkdownEngineTests {
 
 		assertThat(engine.convert(body)).contains(
 				"[fix](https://fisheye.springsource.org/changelog/spring-security?cs=ffe2834f4cd900d99c4a490af62613d087c9aceb)");
+	}
+
+	@Test
+	public void tables() {
+		String body =
+				"h5. Annotations with a {{value}} attribute and other attributes\n" +
+				"\n" +
+				"|| module                   || Annotation                 || Alias Exists? || Alias Name ||\n" +
+				"| {{spring-context}}        | {{@Cacheable}}              | (/)            | {{cacheNames}} |\n" +
+				"| {{spring-context}}        | {{@CacheEvict}}             | (/)            | {{cacheNames}} |\n" +
+				"| {{spring-web}}            | {{@ResponseStatus}}         | (/)            | {{code}} |\n" +
+				"| {{spring-web}}            | {{@SessionAttributes}}      | (/)            | {{names}} |\n";
+
+		assertThat(engine.convert(body)).isEqualTo(
+				"##### Annotations with a `value` attribute and other attributes\n" +
+				"\n" +
+				"|module|Annotation|Alias Exists?|Alias Name|\n" +
+				"|:---|:---|:---|:---|\n" +
+				"| `spring-context`        | `@Cacheable`              | (/)            | `cacheNames` |\n" +
+				"| `spring-context`        | `@CacheEvict`             | (/)            | `cacheNames` |\n" +
+				"| `spring-web`            | `@ResponseStatus`         | (/)            | `code` |\n" +
+				"| `spring-web`            | `@SessionAttributes`      | (/)            | `names` |\n");
 	}
 
 	@Test
@@ -330,5 +488,191 @@ public class MarkdownEngineTests {
 				"assertTrue((sar).hasAlias(\"real_name\", \"alias_b\")); //case 1\n" +
 						"sar.registerAlias(\"name\", \"alias_d\");\n" +
 						"assertFalse((sar).hasAlias(\"real_name\", \"alias_b\")); //case 2\n");
+	}
+
+	@Test
+	public void emphasis() {
+		String body = "and *also* in the documentation\n";
+		assertThat(engine.convert(body)).isEqualTo("and **also** in the documentation\n");
+	}
+
+	@Test
+	public void emphasisMediaType() {
+		String body =
+				"Some request headers(same under both versions):\n" +
+				"Accept:application/json, text/javascript, */*; q=0.01\n" +
+				"Accept-Encoding:gzip, deflate, br\n" +
+				"Accept-Language:zh-CN,zh;q=0.8";
+		assertThat(engine.convert(body)).isEqualTo(
+				"Some request headers(same under both versions):\n" +
+				"Accept:application/json, text/javascript, \\*/\\*; q=0.01\n" +
+				"Accept-Encoding:gzip, deflate, br\n" +
+				"Accept-Language:zh-CN,zh;q=0.8\n");
+	}
+
+	@Test
+	public void emphasisMultiline() {
+		String body =
+				"in my test class i had used\n\n" +
+				"package com.htc.springdemos.daos;\n" +
+				"import java.io.*;\n" +
+				"import org.springframework.beans.factory.BeanFactory;\n" +
+				"import org.springframework.beans.factory.xml.XmlBeanFactory;\n" +
+				"import org.springframework.core.io.*;\n" +
+				"import org.springframework.context.support.*;\n" +
+				"import java.util.*;";
+		assertThat(engine.convert(body)).isEqualTo(
+				"in my test class i had used\n\n" +
+				"package com.htc.springdemos.daos;\n" +
+				"import java.io.\\*;\n" +
+				"import org.springframework.beans.factory.BeanFactory;\n" +
+				"import org.springframework.beans.factory.xml.XmlBeanFactory;\n" +
+				"import org.springframework.core.io.\\*;\n" +
+				"import org.springframework.context.support.\\*;\n" +
+				"import java.util.*;\n");
+	}
+
+	@Test
+	public void emphasisWithUserMention() {
+		String body =
+				"Manager in my DAO's anymore *even though I nowhere used the @Remote annotation*.";
+		assertThat(engine.convert(body)).isEqualTo(
+				"Manager in my DAO's anymore **even though I nowhere used the `@Remote` annotation**.\n");
+	}
+
+	@Test
+	public void emphasisSuppressingHtmlBlocks() {
+		String body =
+				"the installation of it is preaty clean too:\n" +
+				"<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n" +
+				"<web-app id=\"WebApp_ID\" version=\"2.4\"\n" +
+				"\txmlns=\"http://java.sun.com/xml/ns/j2ee\"\n" +
+				"\txmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"\n" +
+				"\txsi:schemaLocation=\"http://java.sun.com/xml/ns/j2ee http://java.sun.com/xml/ns/j2ee/web-app_2_4.xsd\">\n" +
+				"\t<display-name>TO - Novo Site</display-name>\n" +
+				"\t<filter>\n" +
+				"\t\t<filter-name>requestContext</filter-name>\n" +
+				"\t\t<filter-class>\n" +
+				"\t\t\torg.springframework.web.filter.RequestContextFilter\n" +
+				"\t\t</filter-class>\n" +
+				"\t</filter>\n" +
+				"\t<filter-mapping>\n" +
+				"\t\t<filter-name>requestContext</filter-name>\n" +
+				"\t\t<url-pattern>/*</url-pattern>\n" +
+				"\t</filter-mapping>\n" +
+				"\t<servlet>\n" +
+				"\t\t<servlet-name>dispatcher</servlet-name>\n" +
+				"\t\t<servlet-class>\n" +
+				"\t\t\torg.springframework.web.servlet.DispatcherServlet\n" +
+				"\t\t</servlet-class>\n" +
+				"\t\t<load-on-startup>1</load-on-startup>\n" +
+				"\t</servlet>\n" +
+				"\t<servlet-mapping>\n" +
+				"\t\t<servlet-name>dispatcher</servlet-name>\n" +
+				"\t\t<url-pattern>*.to</url-pattern>\n" +
+				"\t</servlet-mapping>\n" +
+				"\t<servlet-mapping>\n" +
+				"\t\t<servlet-name>dispatcher</servlet-name>\n" +
+				"\t\t<url-pattern>/web/*</url-pattern>\n" +
+				"\t</servlet-mapping>\n" +
+				"</web-app>\n";
+
+		assertThat(engine.convert(body)).isEqualTo(
+				"the installation of it is preaty clean too:\n\n" +
+				"\\<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n" +
+				"\\<web-app id=\"WebApp_ID\" version=\"2.4\"\n" +
+				"xmlns=\"http://java.sun.com/xml/ns/j2ee\"\n" +
+				"xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"\n" +
+				"xsi:schemaLocation=\"http://java.sun.com/xml/ns/j2ee http://java.sun.com/xml/ns/j2ee/web-app_2_4.xsd\">\n" +
+				"\\<display-name>TO - Novo Site\\</display-name>\n" +
+				"\\<filter>\n" +
+				"\\<filter-name>requestContext\\</filter-name>\n" +
+				"\\<filter-class>\n" +
+				"org.springframework.web.filter.RequestContextFilter\n" +
+				"\\</filter-class>\n" +
+				"\\</filter>\n" +
+				"\\<filter-mapping>\n" +
+				"\\<filter-name>requestContext\\</filter-name>\n" +
+				"\\<url-pattern>/\\*\\</url-pattern>\n" +
+				"\\</filter-mapping>\n" +
+				"\\<servlet>\n" +
+				"\\<servlet-name>dispatcher\\</servlet-name>\n" +
+				"\\<servlet-class>\n" +
+				"org.springframework.web.servlet.DispatcherServlet\n" +
+				"\\</servlet-class>\n" +
+				"\\<load-on-startup>1\\</load-on-startup>\n" +
+				"\\</servlet>\n" +
+				"\\<servlet-mapping>\n" +
+				"\\<servlet-name>dispatcher\\</servlet-name>\n" +
+				"\\<url-pattern>\\*.to\\</url-pattern>\n" +
+				"\\</servlet-mapping>\n" +
+				"\\<servlet-mapping>\n" +
+				"\\<servlet-name>dispatcher\\</servlet-name>\n" +
+				"\\<url-pattern>/web/*\\</url-pattern>\n" +
+				"\\</servlet-mapping>\n" +
+				"\\</web-app>\n"
+		);
+	}
+
+	@Test
+	@Ignore
+	public void emphasisMediaTypeWithinLinkRef() {
+		String body =
+				"Safari 4:\n\n" +
+				"[DEBUG] ... Requested ... [text/plain;q=0.8, image/png, */*;q=0.5] (based on Accept header)";
+
+		assertThat(engine.convert(body)).isEqualTo(
+				"Safari 4:\n\n" +
+				"[DEBUG] ... Requested ... [text/plain;q=0.8, image/png, \\*/\\*;q=0.5] (based on Accept header)\n");
+	}
+
+	@Test
+	public void html() {
+		String body =
+				"Here are my dependancies\n\n" +
+				"<dependency>\n" +
+				" <groupId>commons-logging</groupId>\n" +
+				" <artifactId>commons-logging</artifactId>\n" +
+				" <version>1.2</version>\n" +
+				" </dependency>\n\n" +
+				"<!-- Actual Logging Implementation log4j 2 -->\n" +
+				" <dependency>\n" +
+				" <groupId>org.apache.logging.log4j</groupId>\n" +
+				" <artifactId>log4j-core</artifactId>\n" +
+				" <version>2.11.1</version>\n" +
+				" </dependency>\n" +
+				" <dependency>\n" +
+				" <groupId>org.apache.logging.log4j</groupId>\n" +
+				" <artifactId>log4j-api</artifactId>\n" +
+				" <version>2.11.1</version>\n" +
+				" </dependency>\n" +
+				" <dependency>\n" +
+				" <groupId>org.apache.logging.log4j</groupId>\n" +
+				" <artifactId>log4j-web</artifactId>\n" +
+				" <version>2.11.1</version>\n" +
+				" </dependency>\n";
+		assertThat(engine.convert(body)).isEqualTo(
+				"Here are my dependancies\n\n" +
+				"\\<dependency>\n" +
+				"\\<groupId>commons-logging\\</groupId>\n" +
+				"\\<artifactId>commons-logging\\</artifactId>\n" +
+				"\\<version>1.2\\</version>\n" +
+				"\\</dependency>\n" +
+				"\\<!-- Actual Logging Implementation log4j 2 -->\n" +
+				"\\<dependency>\n" +
+				"\\<groupId>org.apache.logging.log4j\\</groupId>\n" +
+				"\\<artifactId>log4j-core\\</artifactId>\n" +
+				"\\<version>2.11.1\\</version>\n" +
+				"\\</dependency>\n" +
+				"\\<dependency>\n" +
+				"\\<groupId>org.apache.logging.log4j\\</groupId>\n" +
+				"\\<artifactId>log4j-api\\</artifactId>\n" +
+				"\\<version>2.11.1\\</version>\n" +
+				"\\</dependency>\n" +
+				"\\<dependency>\n" +
+				"\\<groupId>org.apache.logging.log4j\\</groupId>\n" +
+				"\\<artifactId>log4j-web\\</artifactId>\n" +
+				"\\<version>2.11.1\\</version>\n" +
+				"\\</dependency>\n");
 	}
 }
