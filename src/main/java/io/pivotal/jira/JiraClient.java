@@ -69,7 +69,12 @@ public class JiraClient {
 	@Autowired
 	public JiraClient(JiraConfig jiraConfig) {
 		this.jiraConfig = jiraConfig;
-		this.webClient = WebClient.create(jiraConfig.getBaseUrl());
+		WebClient.Builder builder = WebClient.builder().baseUrl(jiraConfig.getBaseUrl());
+		if (jiraConfig.getUser() != null) {
+			builder = builder.defaultHeaders(headers ->
+					headers.setBasicAuth(jiraConfig.getUser(), jiraConfig.getPassword()));
+		}
+		this.webClient = builder.build();
 	}
 
 

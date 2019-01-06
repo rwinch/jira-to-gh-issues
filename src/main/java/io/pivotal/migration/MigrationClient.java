@@ -34,6 +34,7 @@ import io.pivotal.github.GithubComment;
 import io.pivotal.github.GithubConfig;
 import io.pivotal.github.GithubIssue;
 import io.pivotal.github.ImportGithubIssue;
+import io.pivotal.jira.IssueLink;
 import io.pivotal.jira.JiraAttachment;
 import io.pivotal.jira.JiraComment;
 import io.pivotal.jira.JiraConfig;
@@ -254,12 +255,21 @@ public class MigrationClient {
 		logger.info("Collecting lists of backport issues by milestone");
 		MultiValueMap<Milestone, JiraIssue> backportMap = collectBackports(allIssues, milestones);
 
+		logger.info("Collecting restricted issues");
+		List<String> restrictedIssues = allIssues.stream()
+				.filter(issue -> !issue.getFields().isPublic())
+				.map(JiraIssue::getKey)
+				.collect(Collectors.toList());
+
 		logger.info("Preparing for import (wiki to markdown, select labels, format Jira details, etc)");
 		List<JiraIssue> importIssues = context.filterRemaingIssuesToImport(allIssues);
+		importIssues = importIssues.stream()
+				.filter(issue -> issue.getFields().isPublic())
+				.collect(Collectors.toList());
 		List<ImportGithubIssue> importData = importIssues.stream()
 				.map(jiraIssue -> {
 					ImportGithubIssue issueToImport = new ImportGithubIssue();
-					issueToImport.setIssue(initGithubIssue(jiraIssue, milestones));
+					issueToImport.setIssue(initGithubIssue(jiraIssue, milestones, restrictedIssues));
 					issueToImport.setComments(initComments(jiraIssue));
 					return issueToImport;
 				})
@@ -365,7 +375,8 @@ public class MigrationClient {
 		return backportMap;
 	}
 
-	private GithubIssue initGithubIssue(JiraIssue issue, Map<String, Milestone> milestones) {
+	private GithubIssue initGithubIssue(JiraIssue issue, Map<String, Milestone> milestones,
+			List<String> restrictedIssues) {
 
 		Fields fields = issue.getFields();
 		DateTime updated = fields.getUpdated();
@@ -376,7 +387,9 @@ public class MigrationClient {
 		JiraUser reporter = fields.getReporter();
 		String reporterLink = engine.link(reporter.getDisplayName(), reporter.getBrowserUrl());
 		String jiraIssueLink = engine.link(issue.getKey(), issue.getBrowserUrl() + "?redirect=false");
-		String body = "**" + reporterLink + "** opened **" + jiraIssueLink + "** and commented\n";
+		String body = "**" + reporterLink + "** opened **" + jiraIssueLink + "**"
+				+ (fields.getComment().hasRestrictedComments() ? "*" : "")
+				+ " and commented\n";
 		if (fields.getReferenceUrl() != null) {
 			body += "\n**Reference URL:**\n" + fields.getReferenceUrl() + "\n";
 		}
@@ -391,7 +404,7 @@ public class MigrationClient {
 			}
 			body += "\n" + engine.convert(description);
 		}
-		String jiraDetails = initJiraDetails(issue, engine, milestones);
+		String jiraDetails = initJiraDetails(issue, engine, milestones, restrictedIssues);
 		body += "\n\n---\n" + (StringUtils.isEmpty(jiraDetails) ? "No further details from " + jiraIssueLink : jiraDetails);
 		ghIssue.setBody(body);
 
@@ -430,7 +443,9 @@ public class MigrationClient {
 		return ghIssue;
 	}
 
-	private String initJiraDetails(JiraIssue issue, MarkupEngine engine, Map<String, Milestone> milestones) {
+	private String initJiraDetails(JiraIssue issue, MarkupEngine engine,
+			Map<String, Milestone> milestones, List<String> restrictedIssues) {
+
 		Fields fields = issue.getFields();
 		String jiraDetails = "";
 		JiraIssue parent = fields.getParent();
@@ -455,8 +470,11 @@ public class MigrationClient {
 			String subTaskType = "Backport".equalsIgnoreCase(issueType) ? "backport sub-task" : "sub-task";
 			jiraDetails += "\nThis issue is a " + subTaskType + " of " + engine.link(key, parent.getBrowserUrl()) + "\n";
 		}
-		if (!fields.getSubtasks().isEmpty()) {
-			jiraDetails += fields.getSubtasks().stream()
+		List<JiraIssue> subtasks = fields.getSubtasks().stream()
+				.filter(subtask -> !restrictedIssues.contains(subtask.getKey()))
+				.collect(Collectors.toList());
+		if (!subtasks.isEmpty()) {
+			jiraDetails += subtasks.stream()
 					.map(subtask -> {
 						String key = subtask.getKey();
 						String browserUrl = issue.getBrowserUrlFor(key);
@@ -464,8 +482,15 @@ public class MigrationClient {
 					})
 					.collect(Collectors.joining("\n", "\n**Sub-tasks:**\n", "\n"));
 		}
-		if (!fields.getIssuelinks().isEmpty()) {
-			jiraDetails += fields.getIssuelinks().stream()
+		List<IssueLink> issueLinks = fields.getIssuelinks().stream()
+				.filter(link -> link.getOutwardIssue() != null ?
+						!restrictedIssues.contains(link.getOutwardIssue().getKey()) :
+						!restrictedIssues.contains(link.getInwardIssue().getKey()))
+				.collect(Collectors.toList());
+		if (!issueLinks.isEmpty()) {
+			jiraDetails += issueLinks.stream()
+					.filter(link -> !restrictedIssues.contains(link.getOutwardIssue() != null ?
+							link.getOutwardIssue().getKey() : link.getInwardIssue().getKey()))
 					.map(link -> {
 						// For now link to Jira. Later we'll make another pass to replace with GH issue numbers.
 						String key;
@@ -527,10 +552,10 @@ public class MigrationClient {
 		Fields fields = issue.getFields();
 		MarkupEngine engine = markup.engine(fields.getCreated());
 		List<GithubComment> comments = new ArrayList<>();
-		for (JiraComment jiraComment : fields.getComment().getComments()) {
+		for (JiraComment jiraComment : fields.getComment().getVisibleComments()) {
 			GithubComment comment = new GithubComment();
-			String userUrl = jiraComment.getAuthor().getBrowserUrl();
-			String body = "**" + engine.link(jiraComment.getAuthor().getDisplayName(), userUrl) + "** commented\n\n";
+			JiraUser author = jiraComment.getAuthor();
+			String body = "**" + engine.link(author.getDisplayName(), author.getBrowserUrl()) + "** commented\n\n";
 			body += engine.convert(jiraComment.getBody());
 			comment.setBody(body);
 			comment.setCreatedAt(jiraComment.getCreated());

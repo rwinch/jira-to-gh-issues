@@ -44,6 +44,16 @@ public class JiraConfig {
 	 */
 	String migrateJql;
 
+	/**
+	 * User id for basic auth: optional (e.g. for access to dev-only comments).
+	 */
+	String user;
+
+	/**
+	 * Password for basic auth: optional.
+	 */
+	String password;
+
 	public String getMigrateJql() {
 		return migrateJql == null ? "project = " + getProjectId() + " ORDER BY key ASC" : migrateJql;
 	}

@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2016 the original author or authors.
+ * Copyright 2002-2019 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,37 +15,15 @@
  */
 package io.pivotal.jira;
 
-import java.util.List;
-import java.util.stream.Collectors;
-
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
-
 import lombok.Data;
 
 /**
- * @author Rob Winch
- *
+ * @author Rossen Stoyanchev
  */
 @Data
 @JsonIgnoreProperties(ignoreUnknown = true)
-public class JiraCommentPage {
+public class JiraCommentVisibility {
 
-	List<JiraComment> comments;
-
-
-	public List<JiraComment> getVisibleComments() {
-		return comments.stream()
-				.filter(c -> {
-					JiraCommentVisibility visibility = c.getVisibility();
-					return visibility == null || visibility.getValue().equals("Users");
-				})
-				.collect(Collectors.toList());
-	}
-
-	public boolean hasRestrictedComments() {
-		return comments.stream()
-				.map(JiraComment::getVisibility)
-				.anyMatch(visibility -> visibility != null && !visibility.getValue().equals("Users"));
-	}
-
+	String value;
 }
