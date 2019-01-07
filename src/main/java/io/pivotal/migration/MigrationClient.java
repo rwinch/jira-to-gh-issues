@@ -113,6 +113,8 @@ public class MigrationClient {
 
 	private final LabelHandler labelHandler;
 
+	private final IssueProcessor issueProcessor;
+
 	/** For assignees */
 	Map<String, String> jiraToGithubUsername;
 
@@ -134,12 +136,13 @@ public class MigrationClient {
 
 	@Autowired
 	public MigrationClient(GithubConfig config, JiraConfig jiraConfig, MarkupManager markup,
-			MilestoneFilter milestoneFilter, LabelHandler labelHandler) {
+			MilestoneFilter milestoneFilter, LabelHandler labelHandler, IssueProcessor issueProcessor) {
 
 		this.config = config;
 		this.markup = markup;
 		this.milestoneFilter = milestoneFilter;
 		this.labelHandler = labelHandler;
+		this.issueProcessor = issueProcessor;
 		this.repositoryIdProvider = RepositoryId.createFromId(this.config.getRepositorySlug());
 		this.importRequestBuilder = initImportRequestBuilder();
 	}
@@ -243,34 +246,28 @@ public class MigrationClient {
 
 	// https://gist.github.com/jonmagic/5282384165e0f86ef105#start-an-issue-import
 
-	public void createIssues(List<JiraIssue> allIssues, MigrationContext context) {
+	public void createIssues(List<JiraIssue> publicIssues, List<String> restrictedIssueKeys,
+			MigrationContext context) {
 
 		logger.info("Collecting list of users from all issues");
-		Map<String, JiraUser> users = collectUsers(allIssues);
+		Map<String, JiraUser> users = collectUsers(publicIssues);
 		this.markup.configureUserLookup(users);
 
 		logger.info("Retrieving list of milestones");
 		Map<String, Milestone> milestones = retrieveMilestones();
 
 		logger.info("Collecting lists of backport issues by milestone");
-		MultiValueMap<Milestone, JiraIssue> backportMap = collectBackports(allIssues, milestones);
-
-		logger.info("Collecting restricted issues");
-		List<String> restrictedIssues = allIssues.stream()
-				.filter(issue -> !issue.getFields().isPublic())
-				.map(JiraIssue::getKey)
-				.collect(Collectors.toList());
+		MultiValueMap<Milestone, JiraIssue> backportMap = collectBackports(publicIssues, milestones);
 
 		logger.info("Preparing for import (wiki to markdown, select labels, format Jira details, etc)");
-		List<JiraIssue> importIssues = context.filterRemaingIssuesToImport(allIssues);
-		importIssues = importIssues.stream()
-				.filter(issue -> issue.getFields().isPublic())
-				.collect(Collectors.toList());
+		List<JiraIssue> importIssues = context.filterRemaingIssuesToImport(publicIssues);
 		List<ImportGithubIssue> importData = importIssues.stream()
 				.map(jiraIssue -> {
+					issueProcessor.beforeConversion(jiraIssue);
 					ImportGithubIssue issueToImport = new ImportGithubIssue();
-					issueToImport.setIssue(initGithubIssue(jiraIssue, milestones, restrictedIssues));
+					issueToImport.setIssue(initGithubIssue(jiraIssue, milestones, restrictedIssueKeys));
 					issueToImport.setComments(initComments(jiraIssue));
+					issueProcessor.beforeImport(jiraIssue, issueToImport);
 					return issueToImport;
 				})
 				.collect(Collectors.toList());
@@ -438,8 +435,7 @@ public class MigrationClient {
 				ghIssue.setMilestone(milestone.getNumber());
 			}
 		}
-		Set<String> labels = labelHandler.getLabelsFor(issue);
-		ghIssue.getLabels().addAll(labels);
+		ghIssue.getLabels().addAll(labelHandler.getLabelsFor(issue));
 		return ghIssue;
 	}
 

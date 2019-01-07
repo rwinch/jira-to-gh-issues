@@ -71,10 +71,10 @@ public class FieldValueLabelHandler implements LabelHandler {
 
 	void addMapping(FieldType fieldType, String fieldValue, String labelName) {
 		Assert.notNull(fieldType.getLabelFactory(), "No default label creator for " + fieldType);
-		addMapping(fieldType, labelName, fieldValue, fieldType.getLabelFactory());
+		addMapping(fieldType, fieldValue, labelName, fieldType.getLabelFactory());
 	}
 
-	void addMapping(FieldType fieldType, String labelName, String fieldValue, Function<String, Label> creator) {
+	void addMapping(FieldType fieldType, String fieldValue, String labelName, Function<String, Label> creator) {
 		String key = getKey(fieldType, fieldValue);
 		mappings.put(key, creator.apply(labelName));
 	}

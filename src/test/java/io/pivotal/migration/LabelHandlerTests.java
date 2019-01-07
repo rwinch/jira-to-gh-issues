@@ -61,6 +61,7 @@ public class LabelHandlerTests {
 		fields.setStatus(status);
 		fields.setFixVersions(Collections.singletonList(fixVersion));
 		fields.setLabels(Collections.singletonList("RegreSSion"));
+		fields.setSubtasks(Collections.emptyList());
 
 		JiraIssue jiraIssue = new JiraIssue();
 		jiraIssue.setFields(fields);
@@ -80,10 +81,14 @@ public class LabelHandlerTests {
 		JiraComponent component = new JiraComponent();
 		component.setName("[Documentation]");
 
+		JiraFixVersion v = new JiraFixVersion();
+		v.setName("5.0.9");
+
 		JiraIssue.Fields fields = new JiraIssue.Fields();
 		fields.setIssuetype(issueType);
 		fields.setComponents(Collections.singletonList(component));
-		fields.setFixVersions(Collections.emptyList());
+		fields.setFixVersions(Collections.singletonList(v));
+		fields.setSubtasks(Collections.emptyList());
 
 		JiraIssue jiraIssue = new JiraIssue();
 		jiraIssue.setFields(fields);
@@ -99,10 +104,14 @@ public class LabelHandlerTests {
 		JiraIssueType issueType = new JiraIssueType();
 		issueType.setName("Bug");
 
+		JiraFixVersion v = new JiraFixVersion();
+		v.setName("5.0.9");
+
 		JiraIssue.Fields fields = new JiraIssue.Fields();
 		fields.setIssuetype(issueType);
 		fields.setLabels(Collections.singletonList("regression"));
-		fields.setFixVersions(Collections.emptyList());
+		fields.setFixVersions(Collections.singletonList(v));
+		fields.setSubtasks(Collections.emptyList());
 
 		JiraIssue jiraIssue = new JiraIssue();
 		jiraIssue.setFields(fields);
@@ -113,10 +122,28 @@ public class LabelHandlerTests {
 	}
 
 	@Test
-	public void votesLabelHandler() {
+	public void noFixVersionLabelHandler() {
 
 		JiraIssue.Fields fields = new JiraIssue.Fields();
 		fields.setFixVersions(Collections.emptyList());
+		fields.setSubtasks(Collections.emptyList());
+
+		JiraIssue jiraIssue = new JiraIssue();
+		jiraIssue.setFields(fields);
+		jiraIssue.initFixAndBackportVersions();
+
+		assertEquals(Collections.singleton("status: waiting-for-triage"), labelHandler.getLabelsFor(jiraIssue));
+	}
+
+	@Test
+	public void votesLabelHandler() {
+
+		JiraFixVersion v = new JiraFixVersion();
+		v.setName("5.0.9");
+
+		JiraIssue.Fields fields = new JiraIssue.Fields();
+		fields.setFixVersions(Collections.singletonList(v));
+		fields.setSubtasks(Collections.emptyList());
 
 		JiraIssue jiraIssue = new JiraIssue();
 		jiraIssue.setFields(fields);
@@ -141,6 +168,7 @@ public class LabelHandlerTests {
 
 		JiraIssue.Fields fields = new JiraIssue.Fields();
 		fields.setFixVersions(Arrays.asList(v1, v2, v3));
+		fields.setSubtasks(Collections.emptyList());
 
 		JiraIssue jiraIssue = new JiraIssue();
 		jiraIssue.setFields(fields);

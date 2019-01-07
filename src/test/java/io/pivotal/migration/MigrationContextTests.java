@@ -20,7 +20,6 @@ import java.io.Writer;
 
 import io.pivotal.jira.JiraIssue;
 import org.eclipse.egit.github.core.Milestone;
-import org.junit.Before;
 import org.junit.Test;
 
 import static org.assertj.core.api.Assertions.*;

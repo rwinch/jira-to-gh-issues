@@ -17,8 +17,11 @@ package io.pivotal.migration;
 
 import java.util.Arrays;
 import java.util.List;
-import java.util.Set;
 
+import io.pivotal.github.GithubIssue;
+import io.pivotal.github.ImportGithubIssue;
+import io.pivotal.jira.JiraFixVersion;
+import io.pivotal.jira.JiraIssue;
 import io.pivotal.migration.FieldValueLabelHandler.FieldType;
 
 import org.springframework.context.annotation.Bean;
@@ -67,7 +70,7 @@ public class SprMigrationConfig {
 		fieldValueHandler.addMapping(FieldType.COMPONENT, "Web", "web");
 		fieldValueHandler.addMapping(FieldType.COMPONENT, "Web:Client", "web");
 		fieldValueHandler.addMapping(FieldType.COMPONENT, "Web:Portlet", "web");
-		fieldValueHandler.addMapping(FieldType.COMPONENT, "documentation", "[Documentation]", LabelFactories.TYPE_LABEL);
+		fieldValueHandler.addMapping(FieldType.COMPONENT, "[Documentation]", "documentation", LabelFactories.TYPE_LABEL);
 		// "[Build]" - not used
 		// "[Other]" - bad idea
 
@@ -78,7 +81,7 @@ public class SprMigrationConfig {
 		fieldValueHandler.addMapping(FieldType.ISSUE_TYPE, "Pruning", "task");
 		fieldValueHandler.addMapping(FieldType.ISSUE_TYPE, "Task", "task");
 		fieldValueHandler.addMapping(FieldType.ISSUE_TYPE, "Sub-task", "task");
-		// "Backport" - from a failed experiment a long time ago
+		// "Backport" - ignore
 
 		fieldValueHandler.addMapping(FieldType.RESOLUTION, "Deferred", "declined");
 		fieldValueHandler.addMapping(FieldType.RESOLUTION, "Won't Do", "declined");
@@ -87,32 +90,75 @@ public class SprMigrationConfig {
 		fieldValueHandler.addMapping(FieldType.RESOLUTION, "Duplicate", "duplicate");
 		fieldValueHandler.addMapping(FieldType.RESOLUTION, "Invalid", "invalid");
 		// "Complete", "Fixed", "Done" - it should be obvious if it has fix version and is closed
-		// "Incomplete", "Cannot Reproduce" - like issue-bot does
+		// "Incomplete", "Cannot Reproduce" - no label at all (like issue-bot)
 
 		fieldValueHandler.addMapping(FieldType.STATUS, "Waiting for Feedback", "waiting-for-feedback");
-		// "Resolved", "Closed -- it should be obvious if issues is closed (distinction not of interest)
+		// "Resolved", "Closed -- it should be obvious if issue is closed (distinction not of interest)
 		// "Open", "Re Opened" -- it should be obvious from GH timeline
-		// "In Progress", "Investigating" -- no value in those, don't work well
+		// "In Progress", "Investigating" -- no value in those, they don't work well
 
-		fieldValueHandler.addMapping(FieldType.VERSION, "waiting-for-triage", "Waiting for Triage", LabelFactories.STATUS_LABEL);
-		fieldValueHandler.addMapping(FieldType.VERSION, "ideal-for-contribution", "Contributions Welcome", LabelFactories.STATUS_LABEL);
+		fieldValueHandler.addMapping(FieldType.VERSION, "Waiting for Triage", "waiting-for-triage", LabelFactories.STATUS_LABEL);
+		fieldValueHandler.addMapping(FieldType.VERSION, "Contributions Welcome", "ideal-for-contribution", LabelFactories.STATUS_LABEL);
 
-		fieldValueHandler.addMapping(FieldType.LABEL, "regression", "Regression", LabelFactories.TYPE_LABEL);
+		fieldValueHandler.addMapping(FieldType.LABEL, "Regression", "regression", LabelFactories.TYPE_LABEL);
+
 
 		CompositeLabelHandler handler = new CompositeLabelHandler();
 		handler.addLabelHandler(fieldValueHandler);
-		handler.addLabelHandler(new VotesLabelHandler());
-		handler.addLabelHandler(new BackportsLabelHandler());
-		handler.setLabelPostProcessor(labels -> {
-			resolveConflict(labels, "type: bug", "type: regression");
-			resolveConflict(labels, "type: task", "type: documentation");
-		});
+
+		handler.addLabelHandler(LabelFactories.STATUS_LABEL.apply("waiting-for-triage"), issue ->
+				issue.getFields().getResolution() == null && issue.getFixVersion() == null);
+
+		handler.addLabelHandler(LabelFactories.HAS_LABEL.apply("votes-jira"), issue ->
+				issue.getVotes() >= 10);
+
+		handler.addLabelHandler(LabelFactories.HAS_LABEL.apply("backports"), issue ->
+				!issue.getBackportVersions().isEmpty());
+
+		handler.addLabelSupersede("type: bug", "type: regression");
+		handler.addLabelSupersede("type: task", "type: documentation");
+
 		return handler;
 	}
 
-	private void resolveConflict(Set<String> labels, String generalLabel, String specificLabel) {
-		if (labels.contains(generalLabel) && labels.contains(specificLabel)) {
-			labels.remove(generalLabel);
+	@Bean
+	public IssueProcessor issueProcessor() {
+		return new CompositeIssueProcessor(new AssigneeDroppingIssueProcessor(), new Spr7640IssueProcessor());
+	}
+
+
+	private static class AssigneeDroppingIssueProcessor implements IssueProcessor {
+
+		private static final String label1 = LabelFactories.STATUS_LABEL.apply("waiting-for-triage").getName();
+
+		private static final String label2 = LabelFactories.STATUS_LABEL.apply("ideal-for-contribution").getName();
+
+
+		@Override
+		public void beforeImport(JiraIssue issue, ImportGithubIssue importIssue) {
+			JiraFixVersion version = issue.getFixVersion();
+			GithubIssue ghIssue = importIssue.getIssue();
+			if (version != null && version.getName().contains("Backlog") ||
+					ghIssue.getLabels().contains(label1) ||
+					ghIssue.getLabels().contains(label2)) {
+
+				ghIssue.setAssignee(null);
+			}
+		}
+	}
+
+
+	/**
+	 * The description of SPR-7640 is large enough to cause import failure.
+	 */
+	private static class Spr7640IssueProcessor implements IssueProcessor {
+
+		@Override
+		public void beforeConversion(JiraIssue issue) {
+			if (issue.getKey().equals("SPR-7640")) {
+				JiraIssue.Fields fields = issue.getFields();
+				fields.setDescription(fields.getDescription().substring(0, 1000) + "...");
+			}
 		}
 	}
 

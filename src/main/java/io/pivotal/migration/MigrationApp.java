@@ -23,6 +23,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
+import java.util.stream.Collectors;
 
 import io.pivotal.jira.JiraClient;
 import io.pivotal.jira.JiraConfig;
@@ -70,11 +71,6 @@ public class MigrationApp implements CommandLineRunner {
 	@Override
 	public void run(String... strings) throws Exception {
 
-		// TODO fields:
-		// - "no fix version" -> waiting for triage
-		// - drop assignees from backlog and waiting for triage versions
-		// - contributions welcome -> general backlog
-
 		File mappingsFile = new File("github-issue-mappings.properties");
 		File failuresFile = new File("github-migration-failures.txt");
 
@@ -113,13 +109,15 @@ public class MigrationApp implements CommandLineRunner {
 			String migrateJql = jiraConfig.getMigrateJql();
 			List<JiraIssue> issues = jira.findIssuesVotesAndCommits(migrateJql, context::filterRemaingIssuesToImport);
 
-			issues.stream().filter(issue -> issue.getKey().equals("SPR-7640")).findFirst()
-					.ifPresent(issue -> {
-						JiraIssue.Fields fields = issue.getFields();
-						fields.setDescription(fields.getDescription().substring(0, 1000) + "...");
-					});
+			List<String> restrictedIssueKeys = issues.stream()
+					.filter(issue -> !issue.getFields().isPublic())
+					.map(JiraIssue::getKey).collect(Collectors.toList());
 
-			github.createIssues(issues, context);
+			List<JiraIssue> publicIssues = issues.stream()
+					.filter(issue -> issue.getFields().isPublic())
+					.collect(Collectors.toList());
+
+			github.createIssues(publicIssues, restrictedIssueKeys, context);
 
 			logger.info("Migration run completed: " + context);
 		}
