@@ -378,7 +378,7 @@ public class MigrationClient {
 		Fields fields = issue.getFields();
 		DateTime updated = fields.getUpdated();
 		GithubIssue ghIssue = new GithubIssue();
-		ghIssue.setTitle("[" + issue.getKey() + "] " + fields.getSummary());
+		ghIssue.setTitle(fields.getSummary() + " [" + issue.getKey() + "]");
 
 		MarkupEngine engine = markup.engine(issue.getFields().getCreated());
 		JiraUser reporter = fields.getReporter();
@@ -387,9 +387,6 @@ public class MigrationClient {
 		String body = "**" + reporterLink + "** opened **" + jiraIssueLink + "**"
 				+ (fields.getComment().hasRestrictedComments() ? "*" : "")
 				+ " and commented\n";
-		if (fields.getReferenceUrl() != null) {
-			body += "\n**Reference URL:**\n" + fields.getReferenceUrl() + "\n";
-		}
 		String description = fields.getDescription();
 		if(description != null) {
 			// Remove trailing horizontal line
@@ -448,6 +445,9 @@ public class MigrationClient {
 		if (!fields.getVersions().isEmpty()) {
 			jiraDetails += fields.getVersions().stream().map(JiraVersion::getName)
 					.collect(Collectors.joining(", ", "\n**Affects:** ", "\n"));
+		}
+		if (fields.getReferenceUrl() != null) {
+			jiraDetails += "\n**Reference URL:** " + fields.getReferenceUrl() + "\n";
 		}
 		List<JiraAttachment> attachments = fields.getAttachment();
 		if (!attachments.isEmpty()) {
@@ -664,7 +664,7 @@ public class MigrationClient {
 						context.addFailureMessage(milestone.getTitle() +
 								" backport issues holder is a missing the GitHub issue id for " + jiraKey + "\n");
 					}
-					return "- **#" + ghIssueId + "** - " + jiraIssue.getFields().getSummary();
+					return "- " + jiraIssue.getFields().getSummary() + " #" + ghIssueId;
 				})
 				.collect(Collectors.joining("\n"));
 		JiraIssue backportIssue = backportIssues.get(0);
