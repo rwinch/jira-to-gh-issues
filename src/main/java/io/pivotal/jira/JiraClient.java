@@ -33,8 +33,6 @@ import reactor.core.publisher.Mono;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.stereotype.Component;
-import org.springframework.web.client.RestOperations;
-import org.springframework.web.client.RestTemplate;
 import org.springframework.web.reactive.function.client.WebClient;
 
 /**
@@ -51,7 +49,7 @@ public class JiraClient {
 	 * politely fetch one page at a time, but rather get 5 at a time concurrently. This number gives
 	 * a hint where to stop so we avoid running into a bunch of 400 errors before realizing to stop.
 	 */
-	public static final int DEFAULT_MAX_ISSUE_COUNT = 20000;
+	public static final int MAX_ISSUE_COUNT_HINT = 20000;
 
 	private static final ParameterizedTypeReference<Map<String, Object>> MAP_TYPE =
 			new ParameterizedTypeReference<Map<String, Object>>() {};
@@ -61,15 +59,13 @@ public class JiraClient {
 
 	JiraConfig jiraConfig;
 
-	RestOperations rest = new RestTemplate();
-
 	WebClient webClient;
 
 
 	@Autowired
 	public JiraClient(JiraConfig jiraConfig) {
 		this.jiraConfig = jiraConfig;
-		WebClient.Builder builder = WebClient.builder().baseUrl(jiraConfig.getBaseUrl());
+		WebClient.Builder builder = WebClient.builder().baseUrl(jiraConfig.getBaseUrl() + "/rest/api/2");
 		if (jiraConfig.getUser() != null) {
 			builder = builder.defaultHeaders(headers ->
 					headers.setBasicAuth(jiraConfig.getUser(), jiraConfig.getPassword()));
@@ -79,32 +75,27 @@ public class JiraClient {
 
 
 	public JiraProject findProject(String id) {
-		return rest.getForObject(getBaseUrl() + "/project/{id}", JiraProject.class, id);
-	}
-
-	private String getBaseUrl() {
-		return jiraConfig.getBaseUrl() + "/rest/api/2";
+		return webClient.get().uri("/project/{id}", id).retrieve().bodyToMono(JiraProject.class).block();
 	}
 
 	public List<JiraIssue> findIssues(String jql) {
-		return findIssuesInternal(jql).block();
+		return getAndCollectIssues(jql).block();
 	}
 
 	public List<JiraIssue> findIssuesVotesAndCommits(
 			String jql, Function<List<JiraIssue>, List<JiraIssue>> filterIssuesToImport) {
 
-		return findIssuesInternal(jql)
+		return getAndCollectIssues(jql)
 				.flatMap(issues -> {
 					// Load votes and commits only for issues not already imported
-					return populateVotesAndCommits(filterIssuesToImport.apply(issues), 8)
+					return populateVotesAndCommits(filterIssuesToImport.apply(issues))
 							.then(Mono.just(issues));
 				})
 				.block();
 	}
 
-	private Mono<List<JiraIssue>> findIssuesInternal(String jql) {
-		return getIssues(jql, 5, DEFAULT_MAX_ISSUE_COUNT)
-				.collectList()
+	private Mono<List<JiraIssue>> getAndCollectIssues(String jql) {
+		return getIssues(jql).collectList()
 				.doOnNext(issues -> {
 					logger.info("Found {} issues", issues.size());
 
@@ -117,16 +108,16 @@ public class JiraClient {
 				});
 	}
 
-	private Flux<JiraIssue> getIssues(String jql, int concurrency, int maxIssues) {
+	private Flux<JiraIssue> getIssues(String jql) {
 		int pageSize = 1000;
 		logger.info("Loading issues (1000 per page) for jql=\"{}\"", jql);
-		return Flux.range(0, maxIssues / 1000)
+		int concurrency = 5; // we could go higher but each brings large amount of data to convert in parallel
+		return Flux.range(0, MAX_ISSUE_COUNT_HINT / 1000)
 				.flatMap(page -> {
 					int startAt = page * pageSize;
 					System.out.print((page + 1) + " ");
 					return webClient.get()
-							.uri("/rest/api/2/search?" +
-									"maxResults=1000&startAt={0}&jql={jql}&fields=" + JiraIssue.FIELD_NAMES, startAt, jql)
+							.uri("/search?maxResults=1000&startAt={0}&jql={jql}&fields=" + JiraIssue.FIELD_NAMES, startAt, jql)
 							.retrieve()
 							.bodyToMono(JiraSearchResult.class)
 							.onErrorResume(ex -> {
@@ -141,23 +132,25 @@ public class JiraClient {
 	}
 
 	/**
-	 * @issues the issues to populate
-	 * @param concurrency how many issues to fetch data for concurrently. Actual concurrency
+	 * @param issues the issues to populate
 	 */
-	private Mono<Void> populateVotesAndCommits(List<JiraIssue> issues, int concurrency) {
+	private Mono<Void> populateVotesAndCommits(List<JiraIssue> issues) {
 		logger.info("Loading votes and commits (2 requests per issue/iteration)", issues.size());
 		ProgressTracker tracker = new ProgressTracker(issues.size(), 50, 1000, logger.isDebugEnabled());
+		int concurrency = 8; // 16 concurrent requests (2 per flatMap)s
 		return Flux.fromIterable(issues)
 				.flatMap(issue -> {
 					Mono<Map<String, Object>> votesResult = webClient.get()
-							.uri("/rest/api/2/issue/{id}/votes", issue.getId())
+							.uri("/issue/{id}/votes", issue.getId())
 							.retrieve()
 							.bodyToMono(MAP_TYPE)
 							.timeout(Duration.ofSeconds(10))
 							.retry(3);
 					Mono<Map<String, Object>> commitsResult = webClient.get()
-							.uri("/rest/dev-status/1.0/issue/detail?" +
-									"issueId={id}&applicationType=github&dataType=repository", issue.getId())
+							.uri(builder -> builder
+									.replacePath("/rest/dev-status/1.0/issue/detail")
+									.query("issueId={id}&applicationType=github&dataType=repository")
+									.build(issue.getId()))
 							.retrieve()
 							.bodyToMono(MAP_TYPE)
 							.timeout(Duration.ofSeconds(10))

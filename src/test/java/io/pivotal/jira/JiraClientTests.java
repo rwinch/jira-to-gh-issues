@@ -55,7 +55,7 @@ public class JiraClientTests {
 	public void findAllSpr() {
 		jiraConfig.setProjectId("SPR");
 		List<JiraIssue> issues = client.findIssues(jiraConfig.getMigrateJql());
-		assertThat(issues.size()).isGreaterThanOrEqualTo(16000);
+		assertThat(issues.size()).isGreaterThanOrEqualTo(17000);
 		List<String> pairs = new ArrayList<>();
 		for (int i=1; i < issues.size(); i++) {
 			String keyA = issues.get(i - 1).getKey();
