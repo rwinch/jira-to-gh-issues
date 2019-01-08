@@ -20,6 +20,7 @@ import java.net.HttpURLConnection;
 import java.net.URI;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -223,7 +224,9 @@ public class MigrationClient {
 			milestone.setTitle(version.getName());
 			milestone.setState(version.isReleased() ? "closed" : "open");
 			if (version.getReleaseDate() != null) {
-				milestone.setDueOn(version.getReleaseDate().toDate());
+				Date date = version.getReleaseDate().toDate();
+				milestone.setCreatedAt(date);
+				milestone.setDueOn(date);
 			}
 			milestones.createMilestone(repositoryIdProvider, milestone);
 		}
