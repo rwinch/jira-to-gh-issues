@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.pivotal.jira.report;
+package io.pivotal.pre;
 
 import java.io.File;
 import java.io.FileWriter;
@@ -34,7 +34,7 @@ import io.pivotal.util.MarkdownEngine;
  *
  * @author Rossen Stoyanchev
  */
-public class MarkupConverter extends BaseReport {
+public class MarkupConverter extends BaseJiraApp {
 
 
 	public static void main(String args[]) throws IOException {

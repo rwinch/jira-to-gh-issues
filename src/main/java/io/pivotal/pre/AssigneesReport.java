@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.pivotal.jira.report;
+package io.pivotal.pre;
 
 import java.util.HashMap;
 import java.util.List;
@@ -31,7 +31,7 @@ import io.pivotal.jira.JiraUser;
  *
  * @author Rossen Stoyanchev
  */
-public class AssigneesReport extends BaseReport {
+public class AssigneesReport extends BaseJiraApp {
 
 
 	public static void main(String args[]) {

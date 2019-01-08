@@ -326,7 +326,7 @@ public class MarkdownEngine implements MarkupEngine {
 				"-[0-9]{1,5}+)");
 
 		/**
-		 * Derived by using {@link io.pivotal.jira.report.MarkupConverter} to dump
+		 * Derived by using {@link io.pivotal.pre.MarkupConverter} to dump
 		 * descriptions and comments for all issues and grepping for examples.
 		 */
 		private static final List<Character> skipCharsPrecedingJiraIssueKey =

@@ -29,7 +29,6 @@ import io.pivotal.jira.JiraClient;
 import io.pivotal.jira.JiraConfig;
 import io.pivotal.jira.JiraIssue;
 import io.pivotal.jira.JiraProject;
-import io.pivotal.jira.report.MarkupConverter;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.joda.time.DateTime;
@@ -45,7 +44,6 @@ import org.springframework.web.client.HttpClientErrorException;
 
 /**
  * @author Rob Winch
- * @see MarkupConverter
  */
 @SpringBootApplication(scanBasePackages = "io.pivotal")
 public class MigrationApp implements CommandLineRunner {

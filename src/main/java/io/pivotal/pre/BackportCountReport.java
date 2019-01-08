@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.pivotal.jira.report;
+package io.pivotal.pre;
 
 import io.pivotal.jira.JiraIssue;
 
@@ -29,7 +29,7 @@ import io.pivotal.jira.JiraIssue;
  *
  * @author Rossen Stoyanchev
  */
-public class BackportCountReport extends BaseReport {
+public class BackportCountReport extends BaseJiraApp {
 
 
 	public static void main(String args[]) {

@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.pivotal.jira.report;
+package io.pivotal.pre;
 
 import java.io.IOException;
 import java.util.List;
@@ -31,7 +31,7 @@ import org.springframework.core.io.support.PropertiesLoaderUtils;
 /**
  * @author Rossen Stoyanchev
  */
-public class BaseReport {
+public class BaseJiraApp {
 
 
 	protected static List<JiraIssue> getIssuesToMigrate() {
