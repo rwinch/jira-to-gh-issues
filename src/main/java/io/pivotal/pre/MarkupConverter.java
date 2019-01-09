@@ -34,13 +34,13 @@ import io.pivotal.util.MarkdownEngine;
  *
  * @author Rossen Stoyanchev
  */
-public class MarkupConverter extends BaseJiraApp {
+public class MarkupConverter extends BaseApp {
 
 
 	public static void main(String args[]) throws IOException {
 
-		JiraClient client = initJiraClient();
-		JiraConfig config = client.getJiraConfig();
+		JiraConfig config = initJiraConfig();
+		JiraClient client = new JiraClient(config);
 
 		MarkdownEngine engine = new MarkdownEngine();
 		engine.setJiraConfig(config);

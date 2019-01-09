@@ -34,6 +34,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClient;
+import org.springframework.web.reactive.function.client.WebClientResponseException;
 
 /**
  * @author Rob Winch
@@ -135,7 +136,7 @@ public class JiraClient {
 	 * @param issues the issues to populate
 	 */
 	private Mono<Void> populateVotesAndCommits(List<JiraIssue> issues) {
-		logger.info("Loading votes and commits (2 requests per issue/iteration)", issues.size());
+		logger.info("Loading votes and commits for {} issues (2 requests per issue/iteration)", issues.size());
 		ProgressTracker tracker = new ProgressTracker(issues.size(), 50, 1000, logger.isDebugEnabled());
 		int concurrency = 8; // 16 concurrent requests (2 per flatMap)s
 		return Flux.fromIterable(issues)
@@ -177,6 +178,24 @@ public class JiraClient {
 			}
 		}
 		return Collections.emptyList();
+	}
+
+	public void addComments(Map<String, String> comments) {
+		logger.info("Adding comments for {} issues", comments.size());
+		ProgressTracker tracker = new ProgressTracker(comments.size(), 50, 1000, logger.isDebugEnabled());
+		int concurrency = 1;
+		Flux.fromIterable(comments.entrySet())
+				.doOnNext(o -> tracker.updateForIteration())
+				.flatMap(entry -> webClient.post().uri("/issue/{key}/comment", entry.getKey())
+						.syncBody(Collections.singletonMap("body", entry.getValue()))
+						.retrieve()
+						.bodyToMono(Void.class)
+						.doOnError(WebClientResponseException.class,
+								ex -> logger.error(ex.getStatusCode() + ": " + ex.getResponseBodyAsString()))
+						.timeout(Duration.ofSeconds(10))
+						.retry(3), concurrency)
+				.doOnTerminate(tracker::stopProgress)
+				.blockLast();
 	}
 
 }

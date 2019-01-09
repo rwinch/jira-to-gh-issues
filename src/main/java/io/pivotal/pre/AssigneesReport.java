@@ -21,6 +21,8 @@ import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 
+import io.pivotal.jira.JiraClient;
+import io.pivotal.jira.JiraConfig;
 import io.pivotal.jira.JiraIssue;
 import io.pivotal.jira.JiraUser;
 
@@ -31,13 +33,16 @@ import io.pivotal.jira.JiraUser;
  *
  * @author Rossen Stoyanchev
  */
-public class AssigneesReport extends BaseJiraApp {
+public class AssigneesReport extends BaseApp {
 
 
 	public static void main(String args[]) {
 
+		JiraConfig config = initJiraConfig();
+		JiraClient client = new JiraClient(config);
+
 		Map<String, AtomicInteger> result = new HashMap<>();
-		for (JiraIssue issue : getIssuesToMigrate()) {
+		for (JiraIssue issue : client.findIssues(config.getMigrateJql())) {
 			JiraUser user = issue.getFields().getAssignee();
 			if (user != null) {
 				String key = user.getKey() + " (" + user.getDisplayName() + ")";

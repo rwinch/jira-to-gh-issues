@@ -24,35 +24,41 @@ import io.pivotal.jira.JiraConfig;
 import io.pivotal.jira.JiraIssue;
 
 import org.springframework.core.io.ClassPathResource;
-import org.springframework.core.io.Resource;
 import org.springframework.core.io.support.PropertiesLoaderUtils;
 
 
 /**
  * @author Rossen Stoyanchev
  */
-public class BaseJiraApp {
+public class BaseApp {
 
 
-	protected static List<JiraIssue> getIssuesToMigrate() {
-		JiraClient client = initJiraClient();
-		return client.findIssues(client.getJiraConfig().getMigrateJql());
-	}
-
-	protected static JiraClient initJiraClient() {
-		Properties props;
-		try {
-			Resource resource = new ClassPathResource("application.properties");
-			props = PropertiesLoaderUtils.loadProperties(resource);
-		}
-		catch (IOException ex) {
-			throw new IllegalArgumentException(ex);
-		}
+	protected static JiraConfig initJiraConfig() {
+		Properties props = loadApplicationProperties();
 		JiraConfig config = new JiraConfig();
 		config.setBaseUrl(props.getProperty("jira.base-url"));
 		config.setProjectId(props.getProperty("jira.projectId"));
 		config.setMigrateJql(props.getProperty("jira.migrate-jql"));
-		return new JiraClient(config);
+		config.setUser(props.getProperty("jira.user"));
+		config.setPassword(props.getProperty("jira.password"));
+		return config;
+	}
+
+	protected static String initGithubRepoSlug() {
+		Properties props = loadApplicationProperties();
+		return props.getProperty("github.repository-slug");
+	}
+
+	private static Properties loadApplicationProperties() {
+		try {
+			Properties props = new Properties();
+			props.putAll(PropertiesLoaderUtils.loadProperties(new ClassPathResource("application.properties")));
+			props.putAll(PropertiesLoaderUtils.loadProperties(new ClassPathResource("application-local.properties")));
+			return props;
+		}
+		catch (IOException ex) {
+			throw new IllegalArgumentException(ex);
+		}
 	}
 
 }

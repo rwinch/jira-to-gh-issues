@@ -15,6 +15,8 @@
  */
 package io.pivotal.pre;
 
+import io.pivotal.jira.JiraClient;
+import io.pivotal.jira.JiraConfig;
 import io.pivotal.jira.JiraIssue;
 
 
@@ -29,12 +31,16 @@ import io.pivotal.jira.JiraIssue;
  *
  * @author Rossen Stoyanchev
  */
-public class BackportCountReport extends BaseJiraApp {
+public class BackportCountReport extends BaseApp {
 
 
 	public static void main(String args[]) {
 
-		long count = getIssuesToMigrate().stream()
+		JiraConfig config = initJiraConfig();
+		JiraClient client = new JiraClient(config);
+
+		long count = client.findIssues(config.getMigrateJql())
+				.stream()
 				.mapToLong(issue -> issue.getBackportVersions().size())
 				.sum();
 
