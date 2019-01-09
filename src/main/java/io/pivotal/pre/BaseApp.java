@@ -19,13 +19,10 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 
-import io.pivotal.jira.JiraClient;
 import io.pivotal.jira.JiraConfig;
-import io.pivotal.jira.JiraIssue;
 
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.core.io.support.PropertiesLoaderUtils;
@@ -36,9 +33,20 @@ import org.springframework.core.io.support.PropertiesLoaderUtils;
  */
 public class BaseApp {
 
+	protected static final Properties props = new Properties();
+
+	static {
+		try {
+			props.putAll(PropertiesLoaderUtils.loadProperties(new ClassPathResource("application.properties")));
+			props.putAll(PropertiesLoaderUtils.loadProperties(new ClassPathResource("application-local.properties")));
+		}
+		catch (IOException ex) {
+			throw new IllegalArgumentException(ex);
+		}
+	}
+
 
 	protected static JiraConfig initJiraConfig() {
-		Properties props = loadApplicationProperties();
 		JiraConfig config = new JiraConfig();
 		config.setBaseUrl(props.getProperty("jira.base-url"));
 		config.setProjectId(props.getProperty("jira.projectId"));
@@ -46,23 +54,6 @@ public class BaseApp {
 		config.setUser(props.getProperty("jira.user"));
 		config.setPassword(props.getProperty("jira.password"));
 		return config;
-	}
-
-	protected static String initGithubRepoSlug() {
-		Properties props = loadApplicationProperties();
-		return props.getProperty("github.repository-slug");
-	}
-
-	private static Properties loadApplicationProperties() {
-		try {
-			Properties props = new Properties();
-			props.putAll(PropertiesLoaderUtils.loadProperties(new ClassPathResource("application.properties")));
-			props.putAll(PropertiesLoaderUtils.loadProperties(new ClassPathResource("application-local.properties")));
-			return props;
-		}
-		catch (IOException ex) {
-			throw new IllegalArgumentException(ex);
-		}
 	}
 
 	protected static Map<String, Integer> loadIssueMappings(File mappingsFile) throws IOException {

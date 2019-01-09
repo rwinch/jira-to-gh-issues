@@ -48,7 +48,8 @@ public class LastJiraCommentApp extends BaseApp {
 		JiraConfig config = initJiraConfig();
 		JiraClient client = new JiraClient(config);
 
-		String issueBaseUrl = "https://github.com/" + initGithubRepoSlug() + "/issues/";
+		String repoSlug = props.getProperty("github.repository-slug");
+		String issueBaseUrl = "https://github.com/" + repoSlug + "/issues/";
 
 		File mappingsFile = new File("github-issue-mappings.properties");
 		Map<String, Integer> issueMappings = loadIssueMappings(mappingsFile);

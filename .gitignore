@@ -23,5 +23,7 @@ src/main/resources/application-local.properties
 .factorypath
 github-issue-mappings.properties
 github-migration-failures.txt
+jira-link-conversion-failures.txt
+bulk-issue-closing-failures.txt
 markup-before.txt
 markup-after.txt
