@@ -15,8 +15,12 @@
  */
 package io.pivotal.pre;
 
+import java.io.File;
+import java.io.FileInputStream;
 import java.io.IOException;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Properties;
 
 import io.pivotal.jira.JiraClient;
@@ -59,6 +63,14 @@ public class BaseApp {
 		catch (IOException ex) {
 			throw new IllegalArgumentException(ex);
 		}
+	}
+
+	protected static Map<String, Integer> loadIssueMappings(File mappingsFile) throws IOException {
+		Properties props = new Properties();
+		props.load(new FileInputStream(mappingsFile));
+		Map<String, Integer> result = new HashMap<>();
+		props.stringPropertyNames().forEach(name -> result.put(name, Integer.valueOf(props.getProperty(name))));
+		return result;
 	}
 
 }

@@ -16,7 +16,6 @@
 package io.pivotal.migration;
 
 import java.io.IOException;
-import java.net.HttpURLConnection;
 import java.net.URI;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -31,6 +30,8 @@ import java.util.stream.Collectors;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import io.pivotal.github.ExtendedEgitGitHubClient;
+import io.pivotal.github.GitHubRestTemplate;
 import io.pivotal.github.GithubComment;
 import io.pivotal.github.GithubConfig;
 import io.pivotal.github.GithubIssue;
@@ -38,7 +39,6 @@ import io.pivotal.github.ImportGithubIssue;
 import io.pivotal.jira.IssueLink;
 import io.pivotal.jira.JiraAttachment;
 import io.pivotal.jira.JiraComment;
-import io.pivotal.jira.JiraConfig;
 import io.pivotal.jira.JiraFixVersion;
 import io.pivotal.jira.JiraIssue;
 import io.pivotal.jira.JiraIssue.Fields;
@@ -67,25 +67,16 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.core.io.Resource;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.HttpMethod;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.RequestEntity;
 import org.springframework.http.RequestEntity.BodyBuilder;
 import org.springframework.http.ResponseEntity;
-import org.springframework.http.client.ClientHttpResponse;
-import org.springframework.http.client.HttpComponentsClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.util.Assert;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.util.StringUtils;
-import org.springframework.web.client.HttpClientErrorException;
-import org.springframework.web.client.RequestCallback;
-import org.springframework.web.client.ResponseExtractor;
 import org.springframework.web.client.RestClientException;
-import org.springframework.web.client.RestTemplate;
 import org.springframework.web.util.UriComponents;
 import org.springframework.web.util.UriComponentsBuilder;
 
@@ -124,9 +115,9 @@ public class MigrationClient {
 	// for a single user or client ID, wait at least one second between each request.
 	private final RateLimitHelper rateLimitHelper = new RateLimitHelper();
 
-	private final ExtendedRestTemplate rest = new ExtendedRestTemplate(rateLimitHelper);
+	private final GitHubRestTemplate rest = new GitHubRestTemplate(rateLimitHelper, logger);
 
-	private final GitHubClient client = new ExtendedEgitGitHubClient(rateLimitHelper);
+	private final GitHubClient client = new ExtendedEgitGitHubClient(rateLimitHelper, logger);
 
 	private final IRepositoryIdProvider repositoryIdProvider;
 
@@ -136,7 +127,7 @@ public class MigrationClient {
 
 
 	@Autowired
-	public MigrationClient(GithubConfig config, JiraConfig jiraConfig, MarkupManager markup,
+	public MigrationClient(GithubConfig config, MarkupManager markup,
 			MilestoneFilter milestoneFilter, LabelHandler labelHandler, IssueProcessor issueProcessor) {
 
 		this.config = config;
@@ -146,6 +137,7 @@ public class MigrationClient {
 		this.issueProcessor = issueProcessor;
 		this.repositoryIdProvider = RepositoryId.createFromId(this.config.getRepositorySlug());
 		this.importRequestBuilder = initImportRequestBuilder();
+		this.client.setOAuth2Token(config.getAccessToken());
 	}
 
 	private BodyBuilder initImportRequestBuilder() {
@@ -192,7 +184,6 @@ public class MigrationClient {
 				.queryParam("access_token", this.config.getAccessToken())
 				.toUriString();
 
-		// Don't use the ExtendedRestTemplate here which retries and suppresses failure
 		rest.delete(url);
 		return true;
 	}
@@ -727,130 +718,6 @@ public class MigrationClient {
 			String location;
 			String resource;
 			String value;
-		}
-	}
-
-
-
-	private static final List<String> rateLimitedMethods = Arrays.asList("POST", "PATCH", "PUT", "DELETE");
-
-
-	private static class ExtendedRestTemplate extends RestTemplate {
-
-		private final RateLimitHelper rateLimitHelper;
-
-
-		ExtendedRestTemplate(RateLimitHelper rateLimitHelper) {
-			super(new HttpComponentsClientHttpRequestFactory());
-			this.rateLimitHelper = rateLimitHelper;
-		}
-
-
-		@Override
-		protected <T> T doExecute(URI url, HttpMethod method, RequestCallback requestCallback,
-				ResponseExtractor<T> responseExtractor) throws RestClientException {
-			return doExecuteExtended(url, method, requestCallback, responseExtractor);
-		}
-
-		private <T> T doExecuteExtended(URI url, HttpMethod method, RequestCallback requestCallback,
-				ResponseExtractor<T> responseExtractor) throws RestClientException {
-
-			try {
-				RequestCallback decoratedRequestCallback = request -> {
-					if (requestCallback != null) {
-						requestCallback.doWithRequest(request);
-					}
-					MigrationClient.logger.debug("{} {} {}", method, url.getPath(), request.getHeaders());
-				};
-				if (rateLimitedMethods.contains(method.name())) {
-					rateLimitHelper.obtainPermitToCall();
-				}
-				return super.doExecute(url, method, decoratedRequestCallback, responseExtractor);
-			}
-			catch(HttpClientErrorException ex) {
-				HttpHeaders headers = ex.getResponseHeaders();
-				String requestInfo = method + " " + url.getPath() + " " + headers;
-				if (headers == null) {
-					MigrationClient.logger.error("No headers for " + requestInfo);
-					throw ex;
-				}
-				long timeToSleep = 0;
-				String retryAfter = headers.getFirst("Retry-After");
-				if (retryAfter != null) {
-					MigrationClient.logger.debug("Received Retry-After: " + retryAfter + " for " + requestInfo);
-					timeToSleep = 1000 * Integer.parseInt(retryAfter);
-				}
-				else if ("0".equals(headers.getFirst("X-RateLimit-Remaining"))) {
-					String reset = headers.getFirst("X-RateLimit-Reset");
-					if (reset != null) {
-						MigrationClient.logger.debug("Received X-RateLimit-Reset: " + reset + " for " + requestInfo);
-						timeToSleep = (1000 * Long.parseLong(reset)) - System.currentTimeMillis();
-					}
-					else {
-						MigrationClient.logger.error("X-RateLimit-Remaining:0 but no X-RateLimit-Reset: " + requestInfo);
-						throw ex;
-					}
-				}
-				else {
-					throw ex;
-				}
-				try {
-					if (timeToSleep > 0) {
-						Thread.sleep(timeToSleep);
-					}
-				}
-				catch (InterruptedException interruptedEx) {
-					// Ignore
-				}
-			}
-			// Recurse and retry...
-			return doExecuteExtended(url, method, requestCallback, responseExtractor);
-		}
-
-		@Override
-		protected void handleResponse(URI url, HttpMethod method, ClientHttpResponse response) throws IOException {
-			MigrationClient.logger.debug("{} {X-RateLimit-Remaining:{}}",
-					response.getStatusCode(), response.getHeaders().getFirst("X-RateLimit-Remaining"));
-			super.handleResponse(url, method, response);
-		}
-	}
-
-
-	private class ExtendedEgitGitHubClient extends GitHubClient {
-
-		private final RateLimitHelper rateLimitHelper;
-
-
-		ExtendedEgitGitHubClient(RateLimitHelper rateLimitHelper) {
-			this.rateLimitHelper = rateLimitHelper;
-		}
-
-		@Override
-		protected HttpURLConnection configureRequest(HttpURLConnection request) {
-			setOAuth2Token(config.getAccessToken());
-			logger.debug("{} {}", request.getRequestMethod().toUpperCase(), request.getURL().getPath());
-			rateLimitHelper.obtainPermitToCall();
-			HttpURLConnection result = super.configureRequest(request);
-			result.setRequestProperty(HEADER_ACCEPT, MediaType.APPLICATION_JSON_VALUE);
-			return result;
-		}
-
-		@Override
-		protected GitHubClient updateRateLimits(HttpURLConnection request) {
-			GitHubClient client = super.updateRateLimits(request);
-			logger.debug("{} {X-RateLimit-Remaining:{}}", getHttpStatus(request), getRemainingRequests());
-			return client;
-		}
-
-		private HttpStatus getHttpStatus(HttpURLConnection request) {
-			try {
-				int code = request.getResponseCode();
-				return HttpStatus.valueOf(code);
-			}
-			catch (IOException ex) {
-				ex.printStackTrace();
-				return null;
-			}
 		}
 	}
 

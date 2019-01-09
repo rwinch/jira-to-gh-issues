@@ -99,10 +99,10 @@ public class MigrationApp implements CommandLineRunner {
 
 			github.createRepository();
 
-			JiraProject project = jira.findProject(jiraConfig.getProjectId());
-			github.createMilestones(project.getVersions());
-
-			github.createLabels();
+//			JiraProject project = jira.findProject(jiraConfig.getProjectId());
+//			github.createMilestones(project.getVersions());
+//
+//			github.createLabels();
 
 			String migrateJql = jiraConfig.getMigrateJql();
 			List<JiraIssue> issues = jira.findIssuesVotesAndCommits(migrateJql, context::filterRemaingIssuesToImport);
