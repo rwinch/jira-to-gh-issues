@@ -69,7 +69,7 @@ public class LabelHandlerTests {
 		Set<String> labels = labelHandler.getLabelsFor(jiraIssue);
 
 		assertEquals(new HashSet<>(Arrays.asList("in: core", "type: task", "status: declined",
-				"status: waiting-for-feedback", "status: waiting-for-triage", "type: regression")), labels);
+				"status: waiting-for-feedback", "type: regression")), labels);
 	}
 
 	@Test

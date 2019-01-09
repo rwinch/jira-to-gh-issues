@@ -125,6 +125,8 @@ public class MigrationClient {
 
 	private final BodyBuilder importRequestBuilder;
 
+	private int importBatchSize = 100;
+
 
 	@Autowired
 	public MigrationClient(GithubConfig config, MarkupManager markup,
@@ -273,8 +275,8 @@ public class MigrationClient {
 			tracker1.updateForIteration();
 			ImportGithubIssueResponse importResponse = executeIssueImport(importData.get(i), context);
 			importedIssues.add(new ImportedIssue(importIssues.get(i), null, importResponse));
-			if (i % 50 == 0 && i != 0) {
-				for (int j = i - 50; j <= i; j++) {
+			if (i % importBatchSize == 0 && i != 0) {
+				for (int j = i - importBatchSize; j <= i; j++) {
 					if (!checkImportResult(importedIssues.get(j), context)) {
 						logger.error("Detected import failure for " + importIssues.get(i).getKey());
 						break;
@@ -468,7 +470,9 @@ public class MigrationClient {
 					.map(subtask -> {
 						String key = subtask.getKey();
 						String browserUrl = issue.getBrowserUrlFor(key);
-						return "- " + engine.link(key, browserUrl) + " " + subtask.getFields().getSummary();
+						String summary = subtask.getFields().getSummary();
+						summary = engine.convert(summary); // escape annotations (colliding with GitHub mentions)
+						return "- " + engine.link(key, browserUrl) + " " + summary;
 					})
 					.collect(Collectors.joining("\n", "\n**Sub-tasks:**\n", "\n"));
 		}
@@ -496,6 +500,7 @@ public class MigrationClient {
 							linkType = link.getType().getInward();
 							title = link.getInwardIssue().getFields().getSummary();
 						}
+						title = engine.convert(title); // escape annotations (colliding with GitHub mentions)
 						return "- " + engine.link(key, issue.getBrowserUrlFor(key)) + " " + title +
 								(!SUPPRESSED_LINK_TYPES.contains(linkType) ? " (_**\"" + linkType + "\"**_)" : "");
 					})
@@ -645,7 +650,7 @@ public class MigrationClient {
 		GithubIssue ghIssue = new GithubIssue();
 		ghIssue.setMilestone(milestone.getNumber());
 		ghIssue.setTitle(milestone.getTitle() + " Backported Issues");
-		ghIssue.setCreatedAt(new DateTime(milestone.getCreatedAt().getTime()));
+		ghIssue.setCreatedAt(new DateTime(milestone.getDueOn().getTime()));
 		if (milestone.getState().equals("closed")) {
 			ghIssue.setClosed(true);
 			ghIssue.setClosedAt(new DateTime(milestone.getDueOn()));
@@ -663,7 +668,7 @@ public class MigrationClient {
 				.collect(Collectors.joining("\n"));
 		JiraIssue backportIssue = backportIssues.get(0);
 		MarkupEngine engine = markup.engine(backportIssue.getFields().getCreated());
-		body = engine.convert(body);
+		body = engine.convert(body);  // escape annotations (colliding with GitHub mentions)
 		ghIssue.setBody(body);
 		return ghIssue;
 	}

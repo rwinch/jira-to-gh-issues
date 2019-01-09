@@ -117,6 +117,18 @@ public class SprMigrationConfig {
 
 		handler.addLabelSupersede("type: bug", "type: regression");
 		handler.addLabelSupersede("type: task", "type: documentation");
+		handler.addLabelSupersede("status: waiting-for-triage", "status: waiting-for-feedback");
+
+		// In Jira users pick the type when opening ticket. It doesn't work that way in GitHub.
+		handler.addLabelRemoval("status: waiting-for-triage", label -> label.startsWith("type: "));
+		// If it is invalid, the issue type is undefined
+		handler.addLabelRemoval("status: invalid", label -> label.startsWith("type: "));
+		// Anything declined is not a bug nor regression
+		handler.addLabelRemoval("status: declined",  label -> label.equals("type: bug"));
+		handler.addLabelRemoval("status: declined",  label -> label.equals("type: regression"));
+		// No need to label an issue with bug or regression if it is a duplicate
+		handler.addLabelRemoval("status: duplicate", label -> label.equals("type: bug"));
+		handler.addLabelRemoval("status: duplicate", label -> label.equals("type: regression"));
 
 		return handler;
 	}

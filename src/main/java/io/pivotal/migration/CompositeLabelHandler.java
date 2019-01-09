@@ -32,7 +32,11 @@ public class CompositeLabelHandler implements LabelHandler {
 
 	private final List<LabelHandler> handlers = new ArrayList<>();
 
+	/** More general label superseded by presence of more specific one (e.g. bug and regression) */
 	private final Map<String, String> supersedeMappings = new HashMap<>();
+
+	/** If a given label is present, remove a set of others (e.g. waiting-for-triage and "type:...") */
+	private final Map<String, Predicate<String>> removeMappings = new HashMap<>();
 
 
 	public void addLabelHandler(LabelHandler handler) {
@@ -54,6 +58,13 @@ public class CompositeLabelHandler implements LabelHandler {
 		this.supersedeMappings.put(generalLabel, specificLabel);
 	}
 
+	/**
+	 * If the first is present, remove all others matching the predicate.
+	 */
+	public void addLabelRemoval(String triggerLabel, Predicate<String> labelsToDelete) {
+		this.removeMappings.put(triggerLabel, labelsToDelete);
+	}
+
 
 	public Set<Label> getAllLabels() {
 		return handlers.stream()
@@ -68,6 +79,12 @@ public class CompositeLabelHandler implements LabelHandler {
 		supersedeMappings.forEach((general, specific) -> {
 			if (labels.contains(general) && labels.contains(specific)) {
 				labels.remove(general);
+			}
+		});
+		removeMappings.forEach((triggerLabel, predicate) -> {
+			if (labels.contains(triggerLabel)) {
+				List<String> toDelete = labels.stream().filter(predicate).collect(Collectors.toList());
+				labels.removeAll(toDelete);
 			}
 		});
 		return labels;
