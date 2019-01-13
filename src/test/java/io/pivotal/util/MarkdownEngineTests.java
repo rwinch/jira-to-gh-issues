@@ -225,6 +225,17 @@ public class MarkdownEngineTests {
 	}
 
 	@Test
+	public void linkWithSpacesBeforeUrl() {
+		String body =
+				"Ie values for the `targetType` parameter in " +
+				"[PropertyResolver.getProperty(String key, Class targetType) | http://docs.spring.io/spring/docs/4.3.6.RELEASE/javadoc-api/org/springframework/core/env/PropertyResolver.html#getProperty-java.lang.String-java.lang.Class-].\n";
+
+		assertThat(engine.convert(body)).isEqualTo(
+				"Ie values for the `targetType` parameter in " +
+						"[PropertyResolver.getProperty(String key, Class targetType)](http://docs.spring.io/spring/docs/4.3.6.RELEASE/javadoc-api/org/springframework/core/env/PropertyResolver.html#getProperty-java.lang.String-java.lang.Class-).\n");
+	}
+
+	@Test
 	public void tables() {
 		String body =
 				"h5. Annotations with a {{value}} attribute and other attributes\n" +

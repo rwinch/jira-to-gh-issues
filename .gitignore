@@ -25,5 +25,6 @@ github-issue-mappings.properties
 github-migration-failures.txt
 jira-link-conversion-failures.txt
 bulk-issue-closing-failures.txt
+post-migration-conversion-failures.txt
 markup-before.txt
 markup-after.txt

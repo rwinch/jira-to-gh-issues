@@ -122,7 +122,7 @@ public class MarkdownEngine implements MarkupEngine {
 		text = text.replaceAll("(?m)^[ \\t]*bq\\.", "> "); // single line quotes
 		text = text.replaceAll("\\{(color)(:((#)?\\w+))?(?:(:|\\|)\\w+=.+?)*\\}", ""); // color tags
 
-		text = text.replaceAll("\\[(.+?)\\|(http.*?)\\]", "[$1]($2)"); // links
+		text = text.replaceAll("\\[(.+?)[ ]*\\|[ ]*(http.*?)\\]", "[$1]($2)"); // links
 		text = replaceUserKeyWithDisplayNameInJiraUserMentions(text);
 
 		do {
