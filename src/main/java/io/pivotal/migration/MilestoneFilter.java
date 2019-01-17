@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2016 the original author or authors.
+ * Copyright 2002-2018 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,35 +13,17 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.pivotal.jira;
+package io.pivotal.migration;
 
-import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import java.util.function.Predicate;
 
-import lombok.Data;
+import io.pivotal.jira.JiraVersion;
+
 
 /**
- * @author Rob Winch
- *
+ * A predicate to determine if a Jira version should be become a GitHub Milestone,
+ * e.g. the version "Waiting for Triage", used in SPR becomes the label
+ * "status: waiting-for-triage" and not a milestone.
  */
-@Data
-@JsonIgnoreProperties(ignoreUnknown = true)
-public class IssueLink {
-	JiraIssue outwardIssue;
-	JiraIssue inwardIssue;
-	RelatedType type;
-
-
-	@Data
-	@JsonIgnoreProperties(ignoreUnknown = true)
-	public static class RelatedIssue {
-		String key;
-	}
-
-	@Data
-	@JsonIgnoreProperties(ignoreUnknown = true)
-	public static class RelatedType {
-		String name;
-		String inward;
-		String outward;
-	}
+public interface MilestoneFilter extends Predicate<JiraVersion> {
 }

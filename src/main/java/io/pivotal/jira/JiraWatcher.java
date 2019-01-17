@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2016 the original author or authors.
+ * Copyright 2002-2018 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,33 +15,9 @@
  */
 package io.pivotal.jira;
 
-import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
-
 import lombok.Data;
 
-/**
- * @author Rob Winch
- *
- */
 @Data
-@JsonIgnoreProperties(ignoreUnknown = true)
-public class IssueLink {
-	JiraIssue outwardIssue;
-	JiraIssue inwardIssue;
-	RelatedType type;
-
-
-	@Data
-	@JsonIgnoreProperties(ignoreUnknown = true)
-	public static class RelatedIssue {
-		String key;
-	}
-
-	@Data
-	@JsonIgnoreProperties(ignoreUnknown = true)
-	public static class RelatedType {
-		String name;
-		String inward;
-		String outward;
-	}
+public class JiraWatcher {
+	int watchCount;
 }

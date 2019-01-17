@@ -15,7 +15,11 @@
  */
 package io.pivotal.util;
 
+import java.util.Map;
+
+import io.pivotal.jira.JiraUser;
 import org.joda.time.DateTime;
+
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
@@ -25,15 +29,32 @@ import org.springframework.stereotype.Component;
  */
 @Component
 public class MarkupManager {
+
 	@Autowired
 	MarkdownEngine markdown;
 
 	@Autowired
 	TextileEngine textile;
 
-	public MarkupEngine engine(DateTime date) {
-		return isMarkDown(date) ? markdown : textile;
+
+	/**
+	 * Configure a user key to JiraUser lookup, in order to allow showing the
+	 * user display name as opposed to tje user key in user mentions. This is
+	 * invoked at runtime when the users are scraped from Jira issues.
+	 */
+	public void configureUserLookup(Map<String, JiraUser> userLookup) {
+		this.markdown.configureUserLookup(userLookup);
 	}
+
+	public MarkupEngine engine(DateTime date) {
+		// Force markdown: it seems to work better currently than it might have originally.
+		// See original method used for Spring Security migration below..
+		return markdown;
+	}
+
+//	public MarkupEngine engine(DateTime date) {
+//		return isMarkDown(date) ? markdown : textile;
+//	}
 
 	private static boolean isMarkDown(DateTime date) {
 		return date.isAfter(DateTime.parse("2009-04-20T19:00:00Z"));

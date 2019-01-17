@@ -32,4 +32,6 @@ public class JiraComment {
     JiraUser author;
     DateTime created;
 	String body;
+	JiraCommentVisibility visibility;
+
 }

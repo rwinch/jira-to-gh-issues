@@ -19,7 +19,9 @@ package io.pivotal.jira;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.jodatime.api.Assertions.assertThat;
 
+import java.util.ArrayList;
 import java.util.List;
+import java.util.stream.Collectors;
 
 import org.junit.Before;
 import org.junit.Test;
@@ -28,24 +30,41 @@ import io.pivotal.jira.JiraIssue.Fields;
 
 /**
  * @author Rob Winch
- *
+ * @author Rossen Stoyanchev
  */
-public class JiraClientITests {
+public class JiraClientTests {
+	private JiraConfig jiraConfig;
 	private JiraClient client;
 
 	@Before
 	public void setup() {
-		JiraConfig jiraConfig = new JiraConfig();
-		jiraConfig.setBaseUrl("https://jira.spring.io");
+		jiraConfig = new JiraConfig();
+		jiraConfig.setBaseUrl("https://jira-stage.spring.io");
 		jiraConfig.setProjectId("SEC");
-		client = new JiraClient();
+		client = new JiraClient(jiraConfig);
 		client.setJiraConfig(jiraConfig);
 	}
 
 	@Test
-	public void findAll() {
+	public void findAllSec() {
 		List<JiraIssue> issues = client.findIssues("project = SEC");
 		assertThat(issues.size()).isGreaterThanOrEqualTo(3138);
+	}
+
+	@Test
+	public void findAllSpr() {
+		jiraConfig.setProjectId("SPR");
+		List<JiraIssue> issues = client.findIssues(jiraConfig.getMigrateJql());
+		assertThat(issues.size()).isGreaterThanOrEqualTo(17000);
+		List<String> pairs = new ArrayList<>();
+		for (int i=1; i < issues.size(); i++) {
+			String keyA = issues.get(i - 1).getKey();
+			String keyB = issues.get(i).getKey();
+			if (Long.parseLong(keyA.substring("SPR-".length())) > Long.parseLong(keyB.substring("SPR-".length()))) {
+				pairs.add(keyA + "-" + keyB);
+			}
+		}
+		assertThat(pairs).isEmpty();
 	}
 
 	@Test
@@ -63,10 +82,10 @@ public class JiraClientITests {
 		assertThat(issuetype.getId()).isEqualTo(2);
 		assertThat(issuetype.getName()).isEqualTo("New Feature");
 		assertThat(fields.getCreated()).isEqualTo("2005-06-21T20:31:15.000+0000");
-		assertThat(fields.getUpdated()).isEqualTo("2005-10-21T02:57:31.000+0000");
+		assertThat(fields.getUpdated()).isEqualTo("2016-02-06T06:09:14.000+0000");
 
 		List<JiraComment> comments = fields.getComment().getComments();
-		assertThat(comments).hasSize(4);
+		assertThat(comments).hasSize(5);
 		JiraComment first = comments.get(0);
 		assertThat(first.getAuthor().getKey()).isEqualTo("balex");
 		assertThat(first.getAuthor().getDisplayName()).isEqualTo("Ben Alex");
@@ -78,7 +97,7 @@ public class JiraClientITests {
 
 		assertThat(fields.getStatus().getName()).isEqualTo("Closed");
 
-		assertThat(fields.getResolution().getName()).isEqualTo("Fixed");
+		assertThat(fields.getResolution().getName()).isEqualTo("Complete");
 
 		JiraUser reporter = fields.getReporter();
 		assertThat(reporter.getKey()).isEqualTo("balex");
@@ -98,6 +117,62 @@ public class JiraClientITests {
 		assertThat(versions).extracting(JiraVersion::getName).contains("0.9.0","4.1.0 M1");
 		assertThat(project.getIssueTypes()).extracting(JiraIssueType::getName).contains("Bug","New Feature","Task");
 		assertThat(project.getComponents()).extracting(JiraComponent::getName).contains("ACLs","Test","Core");
+	}
+
+	@Test
+	public void votesAndCommits() {
+		List<JiraIssue> issues = client.findIssuesVotesAndCommits("id = SPR-6373", jiraIssues -> jiraIssues);
+
+		assertThat(issues).hasSize(1);
+		JiraIssue issue = issues.get(0);
+		assertThat(issue.getVotes()).isEqualTo(54);
+		List<String> commitUrls = issue.getCommitUrls();
+		assertThat(commitUrls).hasSize(2);
+	}
+
+	@Test
+	public void fixVersionShouldIgnoreDevelopmentVersion() {
+		List<JiraIssue> issues = client.findIssues("id = SPR-17178");
+
+		assertThat(issues).hasSize(1);
+		JiraIssue issue = issues.get(0);
+
+		List<String> all = issue.getFields().getFixVersions().stream().map(JiraFixVersion::getName).collect(Collectors.toList());
+		assertThat(all).contains("5.1 RC2", "5.0.9", "4.3.19").hasSize(3);
+
+		String fixedIn = issue.getFixVersion().getName();
+		assertThat(fixedIn).isEqualTo("5.0.9");
+
+		List<String> backportedTo = issue.getBackportVersions().stream().map(JiraFixVersion::getName).collect(Collectors.toList());
+		assertThat(backportedTo).contains("4.3.19").hasSize(1);
+	}
+
+	@Test
+	public void backportVersionsShouldNotIgnoreDevelopmentVersions() {
+		List<JiraIssue> issues = client.findIssues("id = SPR-17129");
+
+		assertThat(issues).hasSize(1);
+		JiraIssue issue = issues.get(0);
+
+		List<String> all = issue.getFields().getFixVersions().stream().map(JiraFixVersion::getName).collect(Collectors.toList());
+		assertThat(all).contains("5.1 RC3", "5.1 GA").hasSize(2);
+
+		assertThat(issue.getFixVersion().getName()).isEqualTo("5.1 GA");
+		assertThat(issue.getBackportVersions()).isEmpty();
+	}
+
+	@Test
+	public void backportIssueType() {
+		List<JiraIssue> issues = client.findIssues("id in (SPR-10996, SPR-11009)");
+
+		assertThat(issues).hasSize(2);
+		JiraIssue issue = issues.stream().filter(i -> i.getKey().equals("SPR-10996")).findAny().get();
+
+		List<String> all = issue.getFields().getFixVersions().stream().map(JiraFixVersion::getName).collect(Collectors.toList());
+		assertThat(all).contains("4.0 RC1").hasSize(1);
+
+		assertThat(issue.getFixVersion().getName()).isEqualTo("3.2.5");
+		assertThat(issue.getBackportVersions()).isEmpty();
 	}
 
 }

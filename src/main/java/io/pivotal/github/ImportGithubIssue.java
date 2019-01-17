@@ -27,6 +27,10 @@ import lombok.Data;
 @Data
 public class ImportGithubIssue {
 	private GithubIssue issue;
-
 	private List<GithubComment> comments = new ArrayList<>();
+
+	@Override
+	public String toString() {
+		return "ImportGithubIssue[" + issue.getTitle() + "]";
+	}
 }

@@ -15,12 +15,12 @@
  */
 package io.pivotal.util;
 
+import io.pivotal.jira.JiraConfig;
+import lombok.Data;
+
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
-
-import io.pivotal.jira.JiraConfig;
-import lombok.Data;
 
 /**
  * http://redcloth.org/textile
@@ -34,7 +34,7 @@ public class TextileEngine implements MarkupEngine {
 	String jiraBaseUrl;
 
 	@Autowired
-	public void setJiraClient(JiraConfig jiraConfig) {
+	public void setJiraConfig(JiraConfig jiraConfig) {
 		jiraBaseUrl = jiraConfig.getBaseUrl();
 	}
 
