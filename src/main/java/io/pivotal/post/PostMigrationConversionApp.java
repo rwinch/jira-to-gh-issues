@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2019 the original author or authors.
+ * Copyright 2002-2023 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,7 +27,7 @@ import org.springframework.http.RequestEntity;
 import org.springframework.util.CollectionUtils;
 import org.springframework.web.util.UriComponentsBuilder;
 
-import static org.hamcrest.text.IsEqualIgnoringWhiteSpace.*;
+import static org.hamcrest.text.IsEqualCompressingWhiteSpace.equalToCompressingWhiteSpace;
 
 /**
  * Post-migration app making a full pass over all issues and their comments and
@@ -85,7 +85,7 @@ public class PostMigrationConversionApp extends GitHubBaseApp {
 					Integer ghIssueId = (Integer) map.get("number");
 					String descBefore = (String) map.get("body");
 					String descAfter = converter.convert(descBefore, failed);
-					if (!equalToIgnoringWhiteSpace(descBefore).matches(descAfter)) {
+					if (!equalToCompressingWhiteSpace(descBefore).matches(descAfter)) {
 						updateCount++;
 						exchange(patchIssueRequest(ghIssueId, descAfter), Void.class, failWriter, failed);
 						failCount = checkFailures(failCount, failed);
@@ -97,7 +97,7 @@ public class PostMigrationConversionApp extends GitHubBaseApp {
 							Integer commentId = (Integer) commentMap.get("id");
 							String commentBefore = (String) commentMap.get("body");
 							String commentAfter = converter.convert(commentBefore, failed);
-							if (!equalToIgnoringWhiteSpace(commentBefore).matches(commentAfter)) {
+							if (!equalToCompressingWhiteSpace(commentBefore).matches(commentAfter)) {
 								updateCount++;
 								RequestEntity<Map<?, ?>> patchRequest = patchCommentRequest(commentId, commentAfter);
 								exchange(patchRequest, Void.class, failWriter, failed);
@@ -108,7 +108,7 @@ public class PostMigrationConversionApp extends GitHubBaseApp {
 					System.out.print(updateCount > 0 ? " " + ghIssueId + " (" + updateCount +
 							(failed.get() ? " + " + failCount + " failures" : "") + ") " : ".");
 				}
-				System.out.println("");
+				System.out.println();
 				page++;
 			}
 		}

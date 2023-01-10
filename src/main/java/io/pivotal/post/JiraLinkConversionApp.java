@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2019 the original author or authors.
+ * Copyright 2002-2023 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,7 +26,7 @@ import io.pivotal.util.ProgressTracker;
 
 import org.springframework.http.RequestEntity;
 
-import static org.hamcrest.text.IsEqualIgnoringWhiteSpace.*;
+import static org.hamcrest.text.IsEqualCompressingWhiteSpace.equalToCompressingWhiteSpace;
 
 /**
  * @author Rossen Stoyanchev
@@ -53,7 +53,7 @@ public class JiraLinkConversionApp extends GitHubBaseApp {
 				if (map != null) {
 					String descBefore = (String) map.get("body");
 					String descAfter = converter.convert(descBefore);
-					if (!equalToIgnoringWhiteSpace(descBefore).matches(descAfter)) {
+					if (!equalToCompressingWhiteSpace(descBefore).matches(descAfter)) {
 						exchange(patchIssueRequest(ghIssueId, descAfter), Void.class, failWriter, null);
 					}
 				}
@@ -64,7 +64,7 @@ public class JiraLinkConversionApp extends GitHubBaseApp {
 						Integer commentId = (Integer) commentMap.get("id");
 						String commentBefore = (String) commentMap.get("body");
 						String commentAfter = converter.convert(commentBefore);
-						if (!equalToIgnoringWhiteSpace(commentBefore).matches(commentAfter)) {
+						if (!equalToCompressingWhiteSpace(commentBefore).matches(commentAfter)) {
 							exchange(patchCommentRequest(commentId, commentAfter), Void.class, failWriter, null);
 						}
 					});
