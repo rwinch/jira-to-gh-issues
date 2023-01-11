@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2018 the original author or authors.
+ * Copyright 2002-2023 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,7 +25,6 @@ import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
 import io.pivotal.jira.JiraIssue;
-import org.eclipse.egit.github.core.Label;
 
 
 public class CompositeLabelHandler implements LabelHandler {
@@ -47,7 +46,7 @@ public class CompositeLabelHandler implements LabelHandler {
 	 * @param label label to apply if predicate matches
 	 * @param issuePredicate predicate to determine whether to add the label
 	 */
-	public void addLabelHandler(Label label, Predicate<JiraIssue> issuePredicate) {
+	public void addLabelHandler(Map<String, String> label, Predicate<JiraIssue> issuePredicate) {
 		this.handlers.add(new PredicateLabelHandler(label, issuePredicate));
 	}
 
@@ -66,7 +65,7 @@ public class CompositeLabelHandler implements LabelHandler {
 	}
 
 
-	public Set<Label> getAllLabels() {
+	public Set<Map<String, String>> getAllLabels() {
 		return handlers.stream()
 				.flatMap(mapper -> mapper.getAllLabels().stream())
 				.collect(Collectors.toSet());
@@ -93,22 +92,22 @@ public class CompositeLabelHandler implements LabelHandler {
 
 	private static class PredicateLabelHandler implements LabelHandler {
 
-		private final Label label;
+		private final Map<String, String> label;
 
 		private final Predicate<JiraIssue> issuePredicate;
 
 		private final Set<String> labelSet;
 
 
-		PredicateLabelHandler(Label label, Predicate<JiraIssue> issuePredicate) {
+		PredicateLabelHandler(Map<String, String> label, Predicate<JiraIssue> issuePredicate) {
 			this.label = label;
 			this.issuePredicate = issuePredicate;
-			this.labelSet = Collections.singleton(label.getName());
+			this.labelSet = Collections.singleton(label.get("name"));
 		}
 
 
 		@Override
-		public Set<Label> getAllLabels() {
+		public Set<Map<String, String>> getAllLabels() {
 			return Collections.singleton(label);
 		}
 

@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2019 the original author or authors.
+ * Copyright 2002-2023 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,12 +16,12 @@
 package io.pivotal.migration;
 
 import java.util.Collections;
+import java.util.Map;
 
 import io.pivotal.github.GithubIssue;
 import io.pivotal.github.ImportGithubIssue;
 import io.pivotal.jira.JiraFixVersion;
 import io.pivotal.jira.JiraIssue;
-import org.eclipse.egit.github.core.Label;
 import org.junit.Test;
 
 import static org.junit.Assert.*;
@@ -78,7 +78,7 @@ public class IssueProcessorTests {
 		testDropAssigneeBasedOnLabel(LabelFactories.STATUS_LABEL.apply("ideal-for-contribution"));
 	}
 
-	private void testDropAssigneeBasedOnLabel(Label label) {
+	private void testDropAssigneeBasedOnLabel(Map<String, String> label) {
 		JiraIssue.Fields fields = new JiraIssue.Fields();
 		fields.setFixVersions(Collections.emptyList());
 		fields.setSubtasks(Collections.emptyList());
@@ -89,7 +89,7 @@ public class IssueProcessorTests {
 
 		GithubIssue ghIssue = new GithubIssue();
 		ghIssue.setAssignee("jhoeller");
-		ghIssue.getLabels().add(label.getName());
+		ghIssue.getLabels().add(label.get("name"));
 
 		ImportGithubIssue importIssue = new ImportGithubIssue();
 		importIssue.setIssue(ghIssue);

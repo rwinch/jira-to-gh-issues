@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2018 the original author or authors.
+ * Copyright 2002-2023 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,7 +23,6 @@ import java.util.Set;
 import java.util.function.Function;
 
 import io.pivotal.jira.JiraIssue;
-import org.eclipse.egit.github.core.Label;
 
 import org.springframework.util.Assert;
 
@@ -53,20 +52,20 @@ public class FieldValueLabelHandler implements LabelHandler {
 		LABEL(null);
 
 
-		private final Function<String, Label> labelFactory;
+		private final Function<String, Map<String, String>> labelFactory;
 
 
-		FieldType(Function<String, Label> labelFactory) {
+		FieldType(Function<String, Map<String, String>> labelFactory) {
 			this.labelFactory = labelFactory;
 		}
 
-		public Function<String, Label> getLabelFactory() {
+		public Function<String, Map<String, String>> getLabelFactory() {
 			return labelFactory;
 		}
 
 	}
 
-	private final Map<String, Label> mappings = new HashMap<>();
+	private final Map<String, Map<String, String>> mappings = new HashMap<>();
 
 
 	void addMapping(FieldType fieldType, String fieldValue, String labelName) {
@@ -74,7 +73,7 @@ public class FieldValueLabelHandler implements LabelHandler {
 		addMapping(fieldType, fieldValue, labelName, fieldType.getLabelFactory());
 	}
 
-	void addMapping(FieldType fieldType, String fieldValue, String labelName, Function<String, Label> creator) {
+	void addMapping(FieldType fieldType, String fieldValue, String labelName, Function<String, Map<String, String>> creator) {
 		String key = getKey(fieldType, fieldValue);
 		mappings.put(key, creator.apply(labelName));
 	}
@@ -86,7 +85,7 @@ public class FieldValueLabelHandler implements LabelHandler {
 
 
 	@Override
-	public Set<Label> getAllLabels() {
+	public Set<Map<String, String>> getAllLabels() {
 		return new HashSet<>(mappings.values());
 	}
 
@@ -104,25 +103,23 @@ public class FieldValueLabelHandler implements LabelHandler {
 			addLabel(labels, getKey(FieldType.STATUS, fields.getStatus().getName()));
 		}
 		if (fields.getComponents() != null) {
-			fields.getComponents().forEach(component -> {
-				addLabel(labels, getKey(FieldType.COMPONENT, component.getName()));
-			});
+			fields.getComponents().forEach(component ->
+					addLabel(labels, getKey(FieldType.COMPONENT, component.getName())));
 		}
 		if (issue.getFixVersion() != null) {
 			addLabel(labels, getKey(FieldType.VERSION, issue.getFixVersion().getName()));
 		}
 		if (fields.getLabels() != null) {
-			fields.getLabels().forEach(label -> {
-				addLabel(labels, getKey(FieldType.LABEL, label));
-			});
+			fields.getLabels().forEach(label ->
+					addLabel(labels, getKey(FieldType.LABEL, label)));
 		}
 		return labels;
 	}
 
 	private void addLabel(Set<String> labels, String fieldValue) {
-		Label label = mappings.get(fieldValue);
+		Map<String, String> label = mappings.get(fieldValue);
 		if (label != null) {
-			labels.add(label.getName());
+			labels.add(label.get("name"));
 		}
 	}
 

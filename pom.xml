@@ -56,11 +56,6 @@
 			<version>2.12.2</version>
 		</dependency>
 		<dependency>
-			<groupId>org.eclipse.mylyn.github</groupId>
-			<artifactId>org.eclipse.egit.github.core</artifactId>
-			<version>2.1.5</version>
-		</dependency>
-		<dependency>
 			<groupId>io.projectreactor.netty</groupId>
 			<artifactId>reactor-netty</artifactId>
 		</dependency>

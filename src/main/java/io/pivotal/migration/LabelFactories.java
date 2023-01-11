@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2018 the original author or authors.
+ * Copyright 2002-2023 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,9 +15,9 @@
  */
 package io.pivotal.migration;
 
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.function.Function;
-
-import org.eclipse.egit.github.core.Label;
 
 
 /**
@@ -25,20 +25,20 @@ import org.eclipse.egit.github.core.Label;
  */
 public class LabelFactories {
 
-	public static final Function<String, Label> TYPE_LABEL = name -> create("type: ", name, "000000");
+	public static final Function<String, Map<String, String>> TYPE_LABEL = name -> create("type: ", name, "e3d9fc");
 
-	public static final Function<String, Label> STATUS_LABEL = name -> create("status: ", name, "f7e983");
+	public static final Function<String, Map<String, String>> STATUS_LABEL = name -> create("status: ", name, "fef2c0");
 
-	public static final Function<String, Label> IN_LABEL = name -> create("in: ", name, "008672");
+	public static final Function<String, Map<String, String>> IN_LABEL = name -> create("in: ", name, "e8f9de");
 
-	public static final Function<String, Label> HAS_LABEL = name -> create("has: ", name, "b8daf2");
+	public static final Function<String, Map<String, String>> HAS_LABEL = name -> create("has: ", name, "dfdfdf");
 
 
-	private static Label create(String prefix, String labelName, String color) {
-		Label label = new Label();
-		label.setName(prefix + labelName);
-		label.setColor(color);
-		return label;
+	private static Map<String, String> create(String prefix, String labelName, String color) {
+		Map<String, String> map = new LinkedHashMap<>();
+		map.put("name", prefix + labelName);
+		map.put("color", color);
+		return map;
 	}
 
 }

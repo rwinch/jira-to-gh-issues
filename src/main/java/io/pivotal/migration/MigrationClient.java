@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2016 the original author or authors.
+ * Copyright 2002-2023 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,18 +19,16 @@ import java.io.IOException;
 import java.net.URI;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Date;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
-import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
-import io.pivotal.github.ExtendedEgitGitHubClient;
 import io.pivotal.github.GitHubRestTemplate;
 import io.pivotal.github.GithubComment;
 import io.pivotal.github.GithubConfig;
@@ -52,27 +50,21 @@ import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-import org.eclipse.egit.github.core.IRepositoryIdProvider;
-import org.eclipse.egit.github.core.Label;
-import org.eclipse.egit.github.core.Milestone;
-import org.eclipse.egit.github.core.RepositoryId;
-import org.eclipse.egit.github.core.client.GitHubClient;
-import org.eclipse.egit.github.core.client.RequestException;
-import org.eclipse.egit.github.core.service.CommitService;
-import org.eclipse.egit.github.core.service.LabelService;
-import org.eclipse.egit.github.core.service.MilestoneService;
 import org.joda.time.DateTime;
+import org.joda.time.format.DateTimeFormatter;
+import org.joda.time.format.ISODateTimeFormat;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.core.io.Resource;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 import org.springframework.http.RequestEntity;
 import org.springframework.http.RequestEntity.BodyBuilder;
-import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Component;
-import org.springframework.util.Assert;
+import org.springframework.util.CollectionUtils;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.util.StringUtils;
@@ -87,7 +79,7 @@ import org.springframework.web.util.UriComponentsBuilder;
  */
 @Data
 @Component
-public class MigrationClient {
+public class  MigrationClient {
 
 	private static final Logger logger = LogManager.getLogger(MigrationClient.class);
 
@@ -95,6 +87,11 @@ public class MigrationClient {
 
 	private static final ParameterizedTypeReference<Map<String, Object>> MAP_TYPE =
 			new ParameterizedTypeReference<Map<String, Object>>() {};
+
+	private static final ParameterizedTypeReference<List<Map<String, Object>>> LIST_OF_MAPS_TYPE =
+			new ParameterizedTypeReference<List<Map<String, Object>>>() {};
+
+	private static final String GITHUB_URL = "https://api.github.com";
 
 
 	private final GithubConfig config;
@@ -117,11 +114,9 @@ public class MigrationClient {
 
 	private final GitHubRestTemplate rest = new GitHubRestTemplate(rateLimitHelper, logger);
 
-	private final GitHubClient client = new ExtendedEgitGitHubClient(rateLimitHelper, logger);
-
-	private final IRepositoryIdProvider repositoryIdProvider;
-
 	private final DateTime migrationDateTime = DateTime.now();
+
+	private final DateTimeFormatter dateTimeFormatter = ISODateTimeFormat.dateTime();
 
 	private final BodyBuilder importRequestBuilder;
 
@@ -137,22 +132,22 @@ public class MigrationClient {
 		this.milestoneFilter = milestoneFilter;
 		this.labelHandler = labelHandler;
 		this.issueProcessor = issueProcessor;
-		this.repositoryIdProvider = RepositoryId.createFromId(this.config.getRepositorySlug());
-		this.importRequestBuilder = initImportRequestBuilder();
-		this.client.setOAuth2Token(config.getAccessToken());
+		this.importRequestBuilder =
+				getRepositoryRequestBuilder(HttpMethod.POST, "/import/issues")
+						.accept(new MediaType("application", "vnd.github.golden-comet-preview+json"));
 	}
 
-	private BodyBuilder initImportRequestBuilder() {
-		String slug = this.config.getRepositorySlug();
-		URI uri = URI.create("https://api.github.com/repos/" + slug + "/import/issues");
-		return RequestEntity.post(uri)
-				.accept(new MediaType("application", "vnd.github.golden-comet-preview+json"))
-				.header("Authorization", "token " + this.config.getAccessToken());
+	private BodyBuilder getRepositoryRequestBuilder(HttpMethod httpMethod, String path) {
+		String url = GITHUB_URL + "/repos/" + this.config.getRepositorySlug() + path;
+		return RequestEntity.method(httpMethod, URI.create(url))
+				.header(HttpHeaders.AUTHORIZATION, "token " + this.config.getAccessToken());
 	}
 
 	@SuppressWarnings("unused")
 	@Autowired
-	public void setUserMappingResource(@Value("classpath:jira-to-github-users.properties") Resource resource) throws IOException {
+	public void setUserMappingResource(
+			@Value("classpath:jira-to-github-users.properties") Resource resource) throws IOException {
+
 		Properties properties = new Properties();
 		properties.load(resource.getInputStream());
 		jiraToGithubUsername = new HashMap<>();
@@ -163,30 +158,17 @@ public class MigrationClient {
 	}
 
 
-	public boolean deleteRepository() throws IOException {
+	public boolean deleteRepository() {
 		if(!this.config.isDeleteCreateRepositorySlug()) {
 			return false;
 		}
+
 		String slug = this.config.getRepositorySlug();
-
-		CommitService commitService = new CommitService(this.client);
-		try {
-			commitService.getCommits(repositoryIdProvider);
-			throw new IllegalStateException("Attempting to delete a repository that has commits. Terminating!");
-		} catch(RequestException e) {
-			if(e.getStatus() != 404 & e.getStatus() != 409) {
-				throw new IllegalStateException("Attempting to delete a repository, but it appears the repository has commits. Terminating!", e);
-			}
-		}
-
 		logger.info("Deleting repository {}", slug);
 
-		String url = UriComponentsBuilder
-				.fromUriString("https://api.github.com/repos/" + slug)
-				.queryParam("access_token", this.config.getAccessToken())
-				.toUriString();
+		BodyBuilder requestBuilder = getRepositoryRequestBuilder(HttpMethod.DELETE, "");
+		getRest().exchange(requestBuilder.build(), MAP_TYPE);
 
-		rest.delete(url);
 		return true;
 	}
 
@@ -194,47 +176,51 @@ public class MigrationClient {
 		if(!this.config.isDeleteCreateRepositorySlug()) {
 			return;
 		}
-		String slug = this.config.getRepositorySlug();
 
+		String slug = this.config.getRepositorySlug();
 		logger.info("Creating repository {}", slug);
 
-		UriComponentsBuilder uri = UriComponentsBuilder.fromUriString("https://api.github.com/user/repos")
-				.queryParam("access_token", this.config.getAccessToken());
 		Map<String, String> repository = new HashMap<>();
 		repository.put("name", slug.split("/")[1]);
-		ResponseEntity<String> entity = rest.postForEntity(uri.toUriString(), repository, String.class);
-		Assert.notNull(entity, "No response");
+		repository.put("private", "true");
+
+		RequestEntity<Map<String, String>> requestEntity =
+				RequestEntity.post(URI.create(GITHUB_URL + "/user/repos"))
+						.header(HttpHeaders.AUTHORIZATION, "token " + this.config.getAccessToken())
+						.body(repository);
+
+		getRest().exchange(requestEntity, MAP_TYPE);
 	}
 
-	public void createMilestones(List<JiraVersion> versions) throws IOException {
-		MilestoneService milestones = new MilestoneService(this.client);
+	public void createMilestones(List<JiraVersion> versions) {
+		BodyBuilder requestBuilder = getRepositoryRequestBuilder(HttpMethod.POST, "/milestones");
 		versions = versions.stream().filter(milestoneFilter).collect(Collectors.toList());
 		logger.info("Creating {} milestones", versions.size());
 		ProgressTracker tracker = new ProgressTracker(versions.size(), 1, 50, logger.isDebugEnabled());
 		for (JiraVersion version : versions) {
 			tracker.updateForIteration();
-			Milestone milestone = new Milestone();
-			milestone.setTitle(version.getName());
-			milestone.setState(version.isReleased() ? "closed" : "open");
+			Map<String, String> map = new LinkedHashMap<>();
+			map.put("title", version.getName());
+			map.put("state", version.isReleased() ? "closed" : "open");
 			if (version.getReleaseDate() != null) {
-				Date date = version.getReleaseDate().toDate();
-				milestone.setCreatedAt(date);
-				milestone.setDueOn(date);
+				map.put("due_on", version.getReleaseDate().toString(dateTimeFormatter));
 			}
-			milestones.createMilestone(repositoryIdProvider, milestone);
+			this.getRest().exchange(requestBuilder.body(map), MAP_TYPE);
 		}
 		tracker.stopProgress();
 	}
 
-	public void createLabels() throws IOException {
-		LabelService labelService = new LabelService(this.client);
-		Set<Label> labels = labelHandler.getAllLabels();
+	public void createLabels() {
+
+		BodyBuilder bodyBuilder = getRepositoryRequestBuilder(HttpMethod.POST, "/labels");
+
+		Set<Map<String, String>> labels = labelHandler.getAllLabels();
 		logger.info("Creating labels: {}", labels);
 		ProgressTracker tracker = new ProgressTracker(labels.size(), logger.isDebugEnabled());
-		for (Label label : labels) {
+		for (Map<String, String> map : labels) {
 			tracker.updateForIteration();
-			logger.debug("Creating label: \"{}\"", label.getName());
-			labelService.createLabel(repositoryIdProvider, label);
+			logger.debug("Creating label: \"{}\"", map);
+			getRest().exchange(bodyBuilder.body(map), MAP_TYPE);
 		}
 		tracker.stopProgress();
 	}
@@ -250,10 +236,10 @@ public class MigrationClient {
 		this.markup.configureUserLookup(users);
 
 		logger.info("Retrieving list of milestones");
-		Map<String, Milestone> milestones = retrieveMilestones();
+		Map<String, Map<String, Object>> milestones = retrieveMilestones();
 
 		logger.info("Collecting lists of backport issues by milestone");
-		MultiValueMap<Milestone, JiraIssue> backportMap = collectBackports(publicIssues, milestones);
+		MultiValueMap<Map<String, Object>, JiraIssue> backportMap = collectBackports(publicIssues, milestones);
 
 		logger.info("Preparing for import (wiki to markdown, select labels, format Jira details, etc)");
 		List<JiraIssue> importIssues = context.filterRemaingIssuesToImport(publicIssues);
@@ -321,11 +307,11 @@ public class MigrationClient {
 		else {
 			List<String> failed = backportIssueHolders.stream()
 					.filter(issue -> !checkImportResult(issue, context))
-					.map(issue -> issue.getMilestone().getTitle())
+					.map(issue -> (String) issue.getMilestone().get("title"))
 					.collect(Collectors.toList());
 			List<String> succeeded = backportIssueHolders.stream()
 					.filter(i -> checkImportResult(i, context))
-					.map(issue -> issue.getMilestone().getTitle())
+					.map(issue -> (String) issue.getMilestone().get("title"))
 					.collect(Collectors.toList());
 			logger.error("Failed:\n" + failed + "\nSucceeded:\n" + succeeded);
 		}
@@ -343,23 +329,27 @@ public class MigrationClient {
 		return userLookup;
 	}
 
-	private Map<String, Milestone> retrieveMilestones() {
-		try {
-			return new MilestoneService(this.client)
-					.getMilestones(repositoryIdProvider, "all")
-					.stream()
-					.collect(Collectors.toMap(Milestone::getTitle, Function.identity()));
+	private Map<String, Map<String, Object>> retrieveMilestones() {
+		Map<String, Map<String, Object>> result = new LinkedHashMap<>();
+		for (int page = 1; ; page++){
+			String path = "/milestones?state=all&per_page=100&page=" + page;
+			RequestEntity<?> request = getRepositoryRequestBuilder(HttpMethod.GET, path).build();
+			List<Map<String, Object>> milestones = getRest().exchange(request, LIST_OF_MAPS_TYPE).getBody();
+			if (CollectionUtils.isEmpty(milestones)) {
+				break;
+			}
+			milestones.forEach(milestone -> result.put((String) milestone.get("title"), milestone));
 		}
-		catch (IOException ex) {
-			throw new IllegalStateException(ex);
-		}
+		return result;
 	}
 
-	private MultiValueMap<Milestone, JiraIssue> collectBackports(List<JiraIssue> issues, Map<String, Milestone> milestones) {
-		MultiValueMap<Milestone, JiraIssue> backportMap = new LinkedMultiValueMap<>();
+	private MultiValueMap<Map<String, Object>, JiraIssue> collectBackports(
+			List<JiraIssue> issues, Map<String, Map<String, Object>> milestones) {
+
+		MultiValueMap<Map<String, Object>, JiraIssue> backportMap = new LinkedMultiValueMap<>();
 		for (JiraIssue jiraIssue : issues) {
 			for (JiraFixVersion version : jiraIssue.getBackportVersions()) {
-				Milestone milestone = milestones.get(version.getName());
+				Map<String, Object> milestone = milestones.get(version.getName());
 				if (milestone != null) {
 					backportMap.add(milestone, jiraIssue);
 				}
@@ -368,7 +358,7 @@ public class MigrationClient {
 		return backportMap;
 	}
 
-	private GithubIssue initGithubIssue(JiraIssue issue, Map<String, Milestone> milestones,
+	private GithubIssue initGithubIssue(JiraIssue issue, Map<String, Map<String, Object>> milestones,
 			List<String> restrictedIssues) {
 
 		Fields fields = issue.getFields();
@@ -395,7 +385,7 @@ public class MigrationClient {
 			body += "\n" + engine.convert(description);
 		}
 		String jiraDetails = initJiraDetails(issue, engine, milestones, restrictedIssues);
-		body += "\n\n---\n" + (StringUtils.isEmpty(jiraDetails) ? "No further details from " + jiraIssueLink : jiraDetails);
+		body += "\n\n---\n" + (StringUtils.hasText(jiraDetails) ? jiraDetails : "No further details from " + jiraIssueLink);
 		ghIssue.setBody(body);
 
 		// From the Jira docs ("Working with workflows"):
@@ -423,9 +413,9 @@ public class MigrationClient {
 		ghIssue.setCreatedAt(fields.getCreated());
 		ghIssue.setUpdatedAt(updated);
 		if (issue.getFixVersion() != null) {
-			Milestone milestone = milestones.get(issue.getFixVersion().getName());
+			Map<String, Object> milestone = milestones.get(issue.getFixVersion().getName());
 			if (milestone != null) {
-				ghIssue.setMilestone(milestone.getNumber());
+				ghIssue.setMilestone((Integer) milestone.get("number"));
 			}
 		}
 		ghIssue.getLabels().addAll(labelHandler.getLabelsFor(issue));
@@ -433,7 +423,7 @@ public class MigrationClient {
 	}
 
 	private String initJiraDetails(JiraIssue issue, MarkupEngine engine,
-			Map<String, Milestone> milestones, List<String> restrictedIssues) {
+			Map<String, Map<String, Object>> milestones, List<String> restrictedIssues) {
 
 		Fields fields = issue.getFields();
 		String jiraDetails = "";
@@ -525,10 +515,10 @@ public class MigrationClient {
 			jiraDetails += issue.getBackportVersions().stream()
 					.map(jiraFixVersion -> {
 						String name = jiraFixVersion.getName();
-						Milestone milestone = milestones.get(name);
+						Map<String, Object> milestone = milestones.get(name);
 						if (milestone != null) {
 							String baseUrl = "https://github.com/" + config.getRepositorySlug();
-							return engine.link(name, baseUrl + "/milestone/" + milestone.getNumber() + "?closed=1");
+							return engine.link(name, baseUrl + "/milestone/" + milestone.get("number") + "?closed=1");
 						}
 						else {
 							return name;
@@ -564,7 +554,7 @@ public class MigrationClient {
 		Throwable failure = null;
 		try {
 			RequestEntity<ImportGithubIssue> request = importRequestBuilder.body(importIssue);
-			response = rest.exchange(request, ImportGithubIssueResponse.class).getBody();
+			response = getRest().exchange(request, ImportGithubIssueResponse.class).getBody();
 			if (response != null) {
 				response.setImportIssue(importIssue);
 			}
@@ -605,7 +595,7 @@ public class MigrationClient {
 			while (true) {
 				Map<String, Object> body;
 				try {
-					body = rest.exchange(request, MAP_TYPE).getBody();
+					body = getRest().exchange(request, MAP_TYPE).getBody();
 				}
 				catch (RestClientException ex) {
 					logger.error("Import failed: " + importUrl, ex);
@@ -645,22 +635,23 @@ public class MigrationClient {
 	}
 
 	private GithubIssue initMilestoneBackportIssue(
-			Milestone milestone, List<JiraIssue> backportIssues, MigrationContext context) {
+			Map<String, Object> milestone, List<JiraIssue> backportIssues, MigrationContext context) {
 
 		GithubIssue ghIssue = new GithubIssue();
-		ghIssue.setMilestone(milestone.getNumber());
-		ghIssue.setTitle(milestone.getTitle() + " Backported Issues");
-		ghIssue.setCreatedAt(new DateTime(milestone.getDueOn().getTime()));
-		if (milestone.getState().equals("closed")) {
+		ghIssue.setMilestone((Integer) milestone.get("number"));
+		ghIssue.setTitle(milestone.get("title") + " Backported Issues");
+		DateTime dueOnDateTime = this.dateTimeFormatter.parseDateTime((String) milestone.get("due_on"));
+		ghIssue.setCreatedAt(dueOnDateTime);
+		if (milestone.get("state").equals("closed")) {
 			ghIssue.setClosed(true);
-			ghIssue.setClosedAt(new DateTime(milestone.getDueOn()));
+			ghIssue.setClosedAt(dueOnDateTime);
 		}
 		String body = backportIssues.stream()
 				.map(jiraIssue -> {
 					String jiraKey = jiraIssue.getKey();
 					Integer ghIssueId = context.getGitHubIssueId(jiraKey);
 					if (ghIssueId == null) {
-						context.addFailureMessage(milestone.getTitle() +
+						context.addFailureMessage(milestone.get("title") +
 								" backport issues holder is a missing the GitHub issue id for " + jiraKey + "\n");
 					}
 					return "- " + jiraIssue.getFields().getSummary() + " #" + ghIssueId;
@@ -697,7 +688,7 @@ public class MigrationClient {
 		//  2) It's a backport issue holder for a specific milestone
 
 		final JiraIssue jiraIssue;
-		final Milestone milestone;
+		final Map<String, Object> milestone;
 
 		final ImportGithubIssueResponse importResponse;
 	}
