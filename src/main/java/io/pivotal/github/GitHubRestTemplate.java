@@ -67,7 +67,7 @@ public class GitHubRestTemplate extends RestTemplate {
 				if (requestCallback != null) {
 					requestCallback.doWithRequest(request);
 				}
-				logger.debug("{} {} {}", method, url.getPath(), request.getHeaders());
+				logger.debug("{} {}", method, url.getPath());
 			};
 			if (rateLimitedMethods.contains(method.name())) {
 				rateLimitHelper.obtainPermitToCall();
@@ -81,7 +81,7 @@ public class GitHubRestTemplate extends RestTemplate {
 				logger.error("No headers for " + requestInfo);
 				throw ex;
 			}
-			long timeToSleep = 0;
+			long timeToSleep;
 			String retryAfter = headers.getFirst("Retry-After");
 			if (retryAfter != null) {
 				logger.debug("Received Retry-After: " + retryAfter + " for " + requestInfo);
