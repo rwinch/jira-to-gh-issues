@@ -43,7 +43,7 @@ public class JiraLinkConversionApp extends GitHubBaseApp {
 		try (FileWriter failWriter = new FileWriter(failuresFile, true)) {
 
 			String projectId = initJiraConfig().getProjectId();
-			JiraLinkConverter converter = new JiraLinkConverter(projectId, issueMappings, failWriter);
+			JiraLinkConverter converter = new JiraLinkConverter(jiraBaseUrl, projectId, issueMappings, failWriter);
 
 			ProgressTracker tracker = new ProgressTracker(issueMappings.size(), 4, 200, logger.isDebugEnabled());
 			issueMappings.forEach((jiraKey, ghIssueId) -> {

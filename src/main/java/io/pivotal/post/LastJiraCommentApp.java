@@ -76,7 +76,7 @@ public class LastJiraCommentApp extends BaseApp {
 			Assert.notNull(targetId, "No mapping for issue " + issue.getKey());
 			String body = START_OF_COMMENT;
 			body += "This issue was migrated to " +
-					"[spring-projects/spring-framework#" + targetId + "|" + issueBaseUrl + targetId + "]. ";
+					"[" + repoSlug + "#" + targetId + "|" + issueBaseUrl + targetId + "]. ";
 			if (issue.getFields().getResolution() == null) {
 				body += "Please visit the GitHub issue to view further activity, add comments, " +
 						"or subscribe to receive notifications.";

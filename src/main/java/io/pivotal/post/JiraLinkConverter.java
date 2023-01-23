@@ -52,10 +52,11 @@ public class JiraLinkConverter {
 	private final Formatter formatter = Formatter.builder().build();
 
 
-	public JiraLinkConverter(String jiraProject, Map<String, Integer> issueMappings, Writer failWriter) {
+	public JiraLinkConverter(
+			String jiraBaseUrl, String jiraProject, Map<String, Integer> issueMappings, Writer failWriter) {
 
 		this.rawKiraLinkPattern = Pattern.compile(
-				"(https://jira\\.spring\\.io/browse/(" + jiraProject + "-[0-9]{1,5}+)([^?]))");
+				"(" + jiraBaseUrl.replace(".", "\\.") + "/browse/(" + jiraProject + "-[0-9]{1,5}+)([^?]))");
 
 		this.issueMappings = issueMappings;
 		this.failWriter = failWriter;
@@ -127,13 +128,13 @@ public class JiraLinkConverter {
 
 	private static class JiraLinkPostProcessor extends NodePostProcessor {
 
-		private final Pattern sprKeyPattern;
+		private final Pattern jiraKeyPattern;
 
 		private final Map<String, Integer> issueMappings;
 
 
 		JiraLinkPostProcessor(String projectId, Map<String, Integer> issueMappings) {
-			this.sprKeyPattern = Pattern.compile("(" + projectId + "-[0-9]{1,5}+)");
+			this.jiraKeyPattern = Pattern.compile("(" + projectId + "-[0-9]{1,5}+)");
 			this.issueMappings = issueMappings;
 		}
 
@@ -142,7 +143,7 @@ public class JiraLinkConverter {
 			if (node instanceof Link) {
 				String targetText = ((Link) node).getText().toString();
 				String targetLink = ((Link) node).getUrl().toString();
-				if (sprKeyPattern.matcher(targetText).matches() && targetLink.endsWith(targetText)) {
+				if (jiraKeyPattern.matcher(targetText).matches() && targetLink.endsWith(targetText)) {
 					Integer ghIssueId = issueMappings.get(targetText);
 					if (ghIssueId != null) {
 						Text textNode = new Text("#" + ghIssueId);

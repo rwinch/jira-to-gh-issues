@@ -116,7 +116,7 @@ public class  MigrationClient {
 
 	private final DateTime migrationDateTime = DateTime.now();
 
-	private final DateTimeFormatter dateTimeFormatter = ISODateTimeFormat.dateTime();
+	private final DateTimeFormatter dateTimeFormatter = ISODateTimeFormat.dateTimeNoMillis();
 
 	private final BodyBuilder importRequestBuilder;
 
