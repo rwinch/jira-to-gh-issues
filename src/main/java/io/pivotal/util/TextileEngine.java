@@ -39,8 +39,8 @@ public class TextileEngine implements MarkupEngine {
 	}
 
 	@Override
-	public String link(String text, String href) {
-		return "[\"" + text + "\":" + href + "]";
+	public String link(String description, String url) {
+		return "[\"" + description + "\":" + url + "]";
 	}
 
 	@Override
