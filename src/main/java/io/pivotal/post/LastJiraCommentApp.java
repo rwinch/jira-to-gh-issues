@@ -40,7 +40,7 @@ public class LastJiraCommentApp extends BaseApp {
 	private static final Logger logger = LogManager.getLogger(LastJiraCommentApp.class);
 
 	private static final String START_OF_COMMENT =
-			"The Spring Framework has moved from Jira to GitHub Issues. ";
+			"This project has moved from Jira to GitHub Issues. ";
 
 
 	public static void main(String[] args) throws IOException {
