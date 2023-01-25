@@ -68,7 +68,7 @@ public class JiraClient {
 		this.jiraConfig = jiraConfig;
 		WebClient.Builder builder = WebClient.builder()
 				.baseUrl(jiraConfig.getBaseUrl() + "/rest/api/2")
-				.codecs(configurer -> configurer.defaultCodecs().maxInMemorySize(10 * 1024 * 1024));
+				.codecs(configurer -> configurer.defaultCodecs().maxInMemorySize(-1));
 		if (jiraConfig.getUser() != null) {
 			builder = builder.defaultHeaders(headers ->
 					headers.setBasicAuth(jiraConfig.getUser(), jiraConfig.getPassword()));

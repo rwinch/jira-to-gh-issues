@@ -42,7 +42,7 @@ public class JiraLinkConverterTests {
 		issueMappings.put("SPR-15597", 4);
 		issueMappings.put("SPR-14544", 5);
 		issueMappings.put("SPR-15269", 6);
-		this.converter = new JiraLinkConverter("SPR", issueMappings, new StringWriter());
+		this.converter = new JiraLinkConverter("https://jira-stage.spring.io", "SPR", issueMappings, new StringWriter());
 	}
 
 
@@ -82,13 +82,13 @@ public class JiraLinkConverterTests {
 	@Test
 	public void rawJiraLinks() {
 		String body =
-				"**[Arend v. Reinersdorff](https://jira.spring.io/secure/ViewProfile.jspa?name=arend.von.reinersdorff)** opened **[SPR-15269](https://jira.spring.io/browse/SPR-15269?redirect=false)** and commented\n" +
-						"\nSee the discussion in https://jira.spring.io/browse/SPR-14544 and https://jira.spring.io/browse/SPR-15597. It feels like suffixes are a common thing\n" +
+				"**[Arend v. Reinersdorff](https://jira-stage.spring.io/secure/ViewProfile.jspa?name=arend.von.reinersdorff)** opened **[SPR-15269](https://jira-stage.spring.io/browse/SPR-15269?redirect=false)** and commented\n" +
+						"\nSee the discussion in https://jira-stage.spring.io/browse/SPR-14544 and https://jira-stage.spring.io/browse/SPR-15597. It feels like suffixes are a common thing\n" +
 						"(patterns ending '.*', '.txt', '.html') and it could be worth special handling for them. Possibly\n" +
 						"a new PathElement subtype specifically for suffixed PathElements (because currently `\"{foo}.*\"`) type patterns are captured as RegexPathElement instances (the least optimal of the PathElement subtypes).";
 
 		assertThat(converter.convert(body)).isEqualTo(
-				"**[Arend v. Reinersdorff](https://jira.spring.io/secure/ViewProfile.jspa?name=arend.von.reinersdorff)** opened **[SPR-15269](https://jira.spring.io/browse/SPR-15269?redirect=false)** and commented\n" +
+				"**[Arend v. Reinersdorff](https://jira-stage.spring.io/secure/ViewProfile.jspa?name=arend.von.reinersdorff)** opened **[SPR-15269](https://jira-stage.spring.io/browse/SPR-15269?redirect=false)** and commented\n" +
 						"\nSee the discussion in #5 and #4. It feels like suffixes are a common thing\n" +
 						"(patterns ending '.*', '.txt', '.html') and it could be worth special handling for them. Possibly\n" +
 						"a new PathElement subtype specifically for suffixed PathElements (because currently `\"{foo}.*\"`) type patterns are captured as RegexPathElement instances (the least optimal of the PathElement subtypes).\n");
