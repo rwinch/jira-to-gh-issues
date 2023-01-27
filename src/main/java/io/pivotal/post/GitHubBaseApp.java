@@ -54,6 +54,8 @@ public class GitHubBaseApp extends BaseApp {
 
 	protected static final RestTemplate rest = new GitHubRestTemplate(new RateLimitHelper(), logger);
 
+	protected static final String jiraBaseUrl = props.getProperty("jira.base-url");
+
 	protected static final String repositorySlug = props.getProperty("github.repository-slug");
 
 	protected static final String accessToken = props.getProperty("github.access-token");

@@ -19,10 +19,12 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.StringTokenizer;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
+import com.vladsch.flexmark.ast.Code;
 import com.vladsch.flexmark.ast.Document;
 import com.vladsch.flexmark.ast.Emphasis;
 import com.vladsch.flexmark.ast.HtmlBlock;
@@ -40,6 +42,7 @@ import com.vladsch.flexmark.formatter.internal.Formatter;
 import com.vladsch.flexmark.parser.Parser;
 import com.vladsch.flexmark.parser.block.NodePostProcessor;
 import com.vladsch.flexmark.parser.block.NodePostProcessorFactory;
+import com.vladsch.flexmark.util.Function;
 import com.vladsch.flexmark.util.NodeTracker;
 import com.vladsch.flexmark.util.sequence.BasedSequence;
 import io.pivotal.jira.JiraConfig;
@@ -62,6 +65,8 @@ public class MarkdownEngine implements MarkupEngine {
 	private static final Pattern jiraUserMentionPattern = Pattern.compile("\\[~([^]]+)]");
 
 	private static final Pattern tablesPattern = Pattern.compile("(?m)^[ \\t]*(\\|\\|.*\\|\\|)[ \\t]*$");
+
+	private static final Pattern horizontalLinesPattern = Pattern.compile("^([-]+|[=]+)$");
 
 
 	String jiraBaseUrl;
@@ -91,8 +96,8 @@ public class MarkdownEngine implements MarkupEngine {
 	}
 
 	@Override
-	public String link(String text, String href) {
-		return "[" + text + "](" + href + ")";
+	public String link(String description, String url) {
+		return "[" + description + "](" + url + ")";
 	}
 
 	@Override
@@ -124,6 +129,14 @@ public class MarkdownEngine implements MarkupEngine {
 
 		text = text.replaceAll("\\[(.+?)[ ]*\\|[ ]*(http.*?)\\]", "[$1]($2)"); // links
 		text = replaceUserKeyWithDisplayNameInJiraUserMentions(text);
+		text = cleanupHorizontalLines(text);
+		text = convertNonCodeSections(text, s -> {
+			s = s.replaceAll("\\\\\\{", "{");	// drop escaping of "{"
+			s = s.replaceAll("\\\\}", "}");   // drop escaping of "}"
+			s = s.replaceAll("\\\\`}", "}`"); // correct situations with triple "\{{{foo}}\}"
+			s = s.replaceAll("\\\\`", "`"); // drop "\`" which originally would have been "\{{"
+			return s;
+		});
 
 		do {
 			Node node = phase1Parser.parse(text);
@@ -225,6 +238,70 @@ public class MarkdownEngine implements MarkupEngine {
 		return sb.toString();
 	}
 
+	/**
+	 * Convert all occurrences of lines consisting of "-" or only "=" only.
+	 * <p>The dashes are considered a horizontal line in both Jira and markdown
+	 * but without an empty line preceding it, it becomes a heading in markdown
+	 * causing very ugly results especially after stack traces.
+	 * <p>The equals signs has no meaning in Jira markup and appears as is,
+	 * typically used as an alternative horizontal line. However in markdown the
+	 * preceding line becomes a heading if not empty.
+	 * <p>Both are replaced with 3 dashes "---" also ensuring an empty line
+	 * before that, so the result is a horizontal line.
+	 */
+	private String cleanupHorizontalLines(String body) {
+		StringBuilder sb = new StringBuilder();
+		String prevLine = null;
+		boolean inCodeBlock = false;
+		List<String> lines = body.lines().collect(Collectors.toList());
+		for (String currLine : lines) {
+			boolean prevLineNotEmpty = prevLine != null && !prevLine.trim().isEmpty();
+			if (!inCodeBlock && horizontalLinesPattern.matcher(currLine).matches()) {
+				if (prevLineNotEmpty) {
+					sb.append("\n");
+				}
+				sb.append("---\n");
+			}
+			else if (currLine.startsWith("```")) {
+				inCodeBlock = !inCodeBlock;
+				sb.append(currLine).append("\n");
+			}
+			else {
+				sb.append(currLine).append("\n");
+			}
+			prevLine = currLine;
+		}
+		return sb.toString();
+	}
+
+	private String convertNonCodeSections(String body, Function<String, String> textConverter) {
+		if (!StringUtils.hasLength(body)) {
+			return body;
+		}
+		StringBuilder sb = new StringBuilder();
+		StringBuilder text = new StringBuilder();
+		boolean inCodeBlock = false;
+		StringTokenizer tokenizer = new StringTokenizer(body, "\n", true);
+		while (tokenizer.hasMoreTokens()) {
+			String token = tokenizer.nextToken();
+			if (token.startsWith("```")) {
+				if (!inCodeBlock) {
+					sb.append(textConverter.apply(text.toString()));
+					text = new StringBuilder();
+				}
+				inCodeBlock = !inCodeBlock;
+				sb.append(token);
+			}
+			else {
+				(inCodeBlock ? sb : text).append(token);
+			}
+		}
+		if (text.length() > 0) {
+			sb.append(textConverter.apply(text.toString()));
+		}
+		return sb.toString();
+	}
+
 
 	private static final Phase1NodePostProcessor phase1PostProcessor = new Phase1NodePostProcessor();
 
@@ -300,6 +377,7 @@ public class MarkdownEngine implements MarkupEngine {
 			addNodes(HtmlBlock.class, HtmlCommentBlock.class, HtmlInline.class, HtmlInlineComment.class);
 			addNodes(LinkRef.class);
 			addNodes(Text.class);
+			addNodes(Code.class);
 		}
 
 		@Override
@@ -384,6 +462,9 @@ public class MarkdownEngine implements MarkupEngine {
 					return;
 				}
 				content = content.replaceAll("<", "\\\\<");
+			}
+			else if (node instanceof Code) {
+				content = node.getChars().toString().replace("\\<", "<");
 			}
 			replaceNodeWithText(state, node, content);
 		}

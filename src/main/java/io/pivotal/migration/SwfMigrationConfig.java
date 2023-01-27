@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2018 the original author or authors.
+ * Copyright 2002-2023 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -30,14 +30,14 @@ import org.springframework.context.annotation.Configuration;
 
 
 /**
- * Configuration for migration of SPR Jira.
+ * Configuration for migration of SWF Jira.
  */
 @Configuration
-@ConditionalOnProperty(name = "jira.projectId", havingValue = "SPR")
-public class SprMigrationConfig {
+@ConditionalOnProperty(name = "jira.projectId", havingValue = "SWF")
+public class SwfMigrationConfig {
 
 	private static final List<String> skipVersions =
-			Arrays.asList("Contributions Welcome", "Pending Closure", "Waiting for Triage");
+			Arrays.asList("Pending Closure", "Waiting for Triage");
 
 
 	@Bean
@@ -49,32 +49,44 @@ public class SprMigrationConfig {
 	public LabelHandler labelHandler() {
 
 		FieldValueLabelHandler fieldValueHandler = new FieldValueLabelHandler();
-		fieldValueHandler.addMapping(FieldType.COMPONENT, "Caching", "core");
-		fieldValueHandler.addMapping(FieldType.COMPONENT, "Core", "core");
-		fieldValueHandler.addMapping(FieldType.COMPONENT, "Core:AOP", "core");
-		fieldValueHandler.addMapping(FieldType.COMPONENT, "Core:DI", "core");
-		fieldValueHandler.addMapping(FieldType.COMPONENT, "Core:Environment", "core");
-		fieldValueHandler.addMapping(FieldType.COMPONENT, "Core:SpEL", "core");
-		fieldValueHandler.addMapping(FieldType.COMPONENT, "EJB", "core");
-		fieldValueHandler.addMapping(FieldType.COMPONENT, "JMX", "core");
-		fieldValueHandler.addMapping(FieldType.COMPONENT, "Task", "core");
-		fieldValueHandler.addMapping(FieldType.COMPONENT, "Data", "data");
-		fieldValueHandler.addMapping(FieldType.COMPONENT, "Data:JDBC", "data");
-		fieldValueHandler.addMapping(FieldType.COMPONENT, "Data:ORM", "data");
-		fieldValueHandler.addMapping(FieldType.COMPONENT, "OXM", "data");
-		fieldValueHandler.addMapping(FieldType.COMPONENT, "Transaction", "data");
-		fieldValueHandler.addMapping(FieldType.COMPONENT, "JMS", "messaging");
-		fieldValueHandler.addMapping(FieldType.COMPONENT, "Messaging", "messaging");
-		fieldValueHandler.addMapping(FieldType.COMPONENT, "Test", "test");
-		fieldValueHandler.addMapping(FieldType.COMPONENT, "Messaging:WebSocket", "web");
-		fieldValueHandler.addMapping(FieldType.COMPONENT, "Reactive", "web");
-		fieldValueHandler.addMapping(FieldType.COMPONENT, "Remoting", "web");
-		fieldValueHandler.addMapping(FieldType.COMPONENT, "Web", "web");
-		fieldValueHandler.addMapping(FieldType.COMPONENT, "Web:Client", "web");
-		fieldValueHandler.addMapping(FieldType.COMPONENT, "Web:Portlet", "web");
-		fieldValueHandler.addMapping(FieldType.COMPONENT, "[Documentation]", "documentation", LabelFactories.TYPE_LABEL);
-		// "[Build]" - not used
-		// "[Other]" - bad idea
+		fieldValueHandler.addMapping(FieldType.COMPONENT, "Binding: Attribute Mapping System", "binding");
+		fieldValueHandler.addMapping(FieldType.COMPONENT, "Binding: Collection Utilities", "binding");
+		fieldValueHandler.addMapping(FieldType.COMPONENT, "Binding: Expression Language Support", "binding");
+		fieldValueHandler.addMapping(FieldType.COMPONENT, "Binding: Messages System", "binding");
+		fieldValueHandler.addMapping(FieldType.COMPONENT, "Binding: Type Conversion System", "binding");
+		fieldValueHandler.addMapping(FieldType.COMPONENT, "Binding: Validation System", "binding");
+		fieldValueHandler.addMapping(FieldType.COMPONENT, "Core: Actions", "core");
+		fieldValueHandler.addMapping(FieldType.COMPONENT, "Core: Flow Definition Registry", "core");
+		fieldValueHandler.addMapping(FieldType.COMPONENT, "Core: Flow Engine: Engine Implementation", "core");
+		fieldValueHandler.addMapping(FieldType.COMPONENT, "Core: Flow Engine: Flow Builder", "core");
+		fieldValueHandler.addMapping(FieldType.COMPONENT, "Core: Flow Execution Repository", "core");
+		fieldValueHandler.addMapping(FieldType.COMPONENT, "Core: Flow Executor", "core");
+		fieldValueHandler.addMapping(FieldType.COMPONENT, "Core: Flow System Configuration", "core");
+		fieldValueHandler.addMapping(FieldType.COMPONENT, "Core: Flow Test Support", "core");
+		fieldValueHandler.addMapping(FieldType.COMPONENT, "Core: View Selection Rendering", "core");
+		fieldValueHandler.addMapping(FieldType.COMPONENT, "Documentation: Articles & Whitepapers", "documentation", LabelFactories.TYPE_LABEL);
+		fieldValueHandler.addMapping(FieldType.COMPONENT, "Documentation: Blogs", "documentation", LabelFactories.TYPE_LABEL);
+		fieldValueHandler.addMapping(FieldType.COMPONENT, "Documentation: Reference Manual", "documentation", LabelFactories.TYPE_LABEL);
+		fieldValueHandler.addMapping(FieldType.COMPONENT, "Documentation: Release Announcements", "documentation", LabelFactories.TYPE_LABEL);
+		fieldValueHandler.addMapping(FieldType.COMPONENT, "Documentation: Samples", "documentation", LabelFactories.TYPE_LABEL);
+		fieldValueHandler.addMapping(FieldType.COMPONENT, "Documentation: Web Site", "documentation", LabelFactories.TYPE_LABEL);
+		fieldValueHandler.addMapping(FieldType.COMPONENT, "Flow Builder: CRUD", "core");
+		fieldValueHandler.addMapping(FieldType.COMPONENT, "Flow Builder: Groovy", "core");
+		fieldValueHandler.addMapping(FieldType.COMPONENT, "Flow Builder: Java", "core");
+		fieldValueHandler.addMapping(FieldType.COMPONENT, "Flow Model Builder: XML", "core");
+		fieldValueHandler.addMapping(FieldType.COMPONENT, "Integration: Flex / AIR", "integration");
+		fieldValueHandler.addMapping(FieldType.COMPONENT, "Integration: GWT", "integration");
+		fieldValueHandler.addMapping(FieldType.COMPONENT, "Integration: OSGi", "integration");
+		fieldValueHandler.addMapping(FieldType.COMPONENT, "Integration: Persistence Support", "integration");
+		fieldValueHandler.addMapping(FieldType.COMPONENT, "Integration: Portlet", "integration");
+		fieldValueHandler.addMapping(FieldType.COMPONENT, "Integration: Security", "integration");
+		fieldValueHandler.addMapping(FieldType.COMPONENT, "Integration: Servlet", "integration");
+		fieldValueHandler.addMapping(FieldType.COMPONENT, "Integration: Spring MVC", "integration");
+		fieldValueHandler.addMapping(FieldType.COMPONENT, "Integration: Struts", "integration");
+		fieldValueHandler.addMapping(FieldType.COMPONENT, "JavaScript", "integration");
+		fieldValueHandler.addMapping(FieldType.COMPONENT, "JSF", "integration");
+		fieldValueHandler.addMapping(FieldType.COMPONENT, "Tools", "integration");
+		// "Build System" - not used
 
 		fieldValueHandler.addMapping(FieldType.ISSUE_TYPE, "Bug", "bug");
 		fieldValueHandler.addMapping(FieldType.ISSUE_TYPE, "New Feature", "enhancement");
@@ -91,8 +103,9 @@ public class SprMigrationConfig {
 		fieldValueHandler.addMapping(FieldType.RESOLUTION, "Works as Designed", "declined");
 		fieldValueHandler.addMapping(FieldType.RESOLUTION, "Duplicate", "duplicate");
 		fieldValueHandler.addMapping(FieldType.RESOLUTION, "Invalid", "invalid");
+		fieldValueHandler.addMapping(FieldType.RESOLUTION, "Incomplete", "invalid");
+		fieldValueHandler.addMapping(FieldType.RESOLUTION, "Cannot Reproduce", "invalid");
 		// "Complete", "Fixed", "Done" - it should be obvious if it has fix version and is closed
-		// "Incomplete", "Cannot Reproduce" - no label at all (like issue-bot)
 
 		fieldValueHandler.addMapping(FieldType.STATUS, "Waiting for Feedback", "waiting-for-feedback");
 		// "Resolved", "Closed -- it should be obvious if issue is closed (distinction not of interest)
@@ -100,7 +113,6 @@ public class SprMigrationConfig {
 		// "In Progress", "Investigating" -- no value in those, they don't work well
 
 		fieldValueHandler.addMapping(FieldType.VERSION, "Waiting for Triage", "waiting-for-triage", LabelFactories.STATUS_LABEL);
-		fieldValueHandler.addMapping(FieldType.VERSION, "Contributions Welcome", "ideal-for-contribution", LabelFactories.STATUS_LABEL);
 
 		fieldValueHandler.addMapping(FieldType.LABEL, "Regression", "regression", LabelFactories.TYPE_LABEL);
 
@@ -137,7 +149,7 @@ public class SprMigrationConfig {
 
 	@Bean
 	public IssueProcessor issueProcessor() {
-		return new CompositeIssueProcessor(new AssigneeDroppingIssueProcessor(), new Spr7640IssueProcessor());
+		return new CompositeIssueProcessor(new AssigneeDroppingIssueProcessor());
 	}
 
 
@@ -157,21 +169,6 @@ public class SprMigrationConfig {
 					ghIssue.getLabels().contains(label2)) {
 
 				ghIssue.setAssignee(null);
-			}
-		}
-	}
-
-
-	/**
-	 * The description of SPR-7640 is large enough to cause import failure.
-	 */
-	private static class Spr7640IssueProcessor implements IssueProcessor {
-
-		@Override
-		public void beforeConversion(JiraIssue issue) {
-			if (issue.getKey().equals("SPR-7640")) {
-				JiraIssue.Fields fields = issue.getFields();
-				fields.setDescription(fields.getDescription().substring(0, 1000) + "...");
 			}
 		}
 	}

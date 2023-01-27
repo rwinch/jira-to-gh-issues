@@ -34,7 +34,7 @@ public class JiraFixVersion {
 	String name;
 
 	public boolean isBeforeGA() {
-		return name.matches(".* RC[1-9]") || name.matches(".* M[1-9]");
+		return name.matches(".*RC[1-9]") || name.matches(".*M[1-9]");
 	}
 
 
@@ -44,7 +44,7 @@ public class JiraFixVersion {
 
 
 	private static class JiraFixVersionComparator implements Comparator<JiraFixVersion> {
-		static final String PARTS_EXPRESSION = "[\\. ]";
+		static final String PARTS_EXPRESSION = "[. ]";
 
 		/* (non-Javadoc)
 		 * @see java.util.Comparator#compare(java.lang.Object, java.lang.Object)

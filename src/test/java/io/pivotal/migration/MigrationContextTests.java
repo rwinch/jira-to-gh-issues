@@ -17,12 +17,13 @@ package io.pivotal.migration;
 
 import java.io.StringWriter;
 import java.io.Writer;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 import io.pivotal.jira.JiraIssue;
-import org.eclipse.egit.github.core.Milestone;
 import org.junit.Test;
 
-import static org.assertj.core.api.Assertions.*;
+import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * @author Rossen Stoyanchev
@@ -44,8 +45,8 @@ public class MigrationContextTests {
 
 	@Test
 	public void backportIssueImportResult() {
-		Milestone milestone = new Milestone();
-		milestone.setTitle("4.3.19");
+		Map<String, Object> milestone = new LinkedHashMap<>();
+		milestone.put("title", "4.3.19");
 		context.addImportResult(backportIssueHolderImport(milestone, 1300, null));
 		assertThat(mappingsWriter.toString()).isEmpty();
 		assertThat(failuresWriter.toString()).isEmpty();
@@ -63,8 +64,8 @@ public class MigrationContextTests {
 
 	@Test
 	public void backportIssueFailedImport() {
-		Milestone milestone = new Milestone();
-		milestone.setTitle("4.3.19");
+		Map<String, Object> milestone = new LinkedHashMap<>();
+		milestone.put("title", "4.3.19");
 		context.addImportResult(backportIssueHolderImport(milestone, null, "Failure description"));
 		assertThat(mappingsWriter.toString()).isEmpty();
 		assertThat(context.getFailedImportCount()).isEqualTo(1);
@@ -81,7 +82,9 @@ public class MigrationContextTests {
 		return imported;
 	}
 
-	private MigrationClient.ImportedIssue backportIssueHolderImport(Milestone milestone, Integer ghIssueId, String failure) {
+	private MigrationClient.ImportedIssue backportIssueHolderImport(
+			Map<String, Object> milestone, Integer ghIssueId, String failure) {
+
 		MigrationClient.ImportedIssue imported = new MigrationClient.ImportedIssue(null, milestone, null);
 		imported.setIssueNumber(ghIssueId);
 		imported.setFailure(failure);

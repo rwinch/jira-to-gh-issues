@@ -74,7 +74,7 @@ public class MigrationContext {
 		}
 		else {
 			failedImportCount++;
-			String ref = jiraIssue != null ? jiraIssue.getKey() : imported.getMilestone().getTitle() + " backports";
+			String ref = jiraIssue != null ? jiraIssue.getKey() : imported.getMilestone().get("title") + " backports";
 			writeLine(failuresWriter, "=> " + ref + " [" + imported.getFailure() + "]\n");
 		}
 	}

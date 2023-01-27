@@ -40,7 +40,7 @@ public class LastJiraCommentApp extends BaseApp {
 	private static final Logger logger = LogManager.getLogger(LastJiraCommentApp.class);
 
 	private static final String START_OF_COMMENT =
-			"The Spring Framework has moved from Jira to GitHub Issues. ";
+			"This project has moved from Jira to GitHub Issues. ";
 
 
 	public static void main(String[] args) throws IOException {
@@ -76,7 +76,7 @@ public class LastJiraCommentApp extends BaseApp {
 			Assert.notNull(targetId, "No mapping for issue " + issue.getKey());
 			String body = START_OF_COMMENT;
 			body += "This issue was migrated to " +
-					"[spring-projects/spring-framework#" + targetId + "|" + issueBaseUrl + targetId + "]. ";
+					"[" + repoSlug + "#" + targetId + "|" + issueBaseUrl + targetId + "]. ";
 			if (issue.getFields().getResolution() == null) {
 				body += "Please visit the GitHub issue to view further activity, add comments, " +
 						"or subscribe to receive notifications.";

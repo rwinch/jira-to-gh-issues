@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2018 the original author or authors.
+ * Copyright 2002-2023 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,10 +16,10 @@
 package io.pivotal.migration;
 
 
+import java.util.Map;
 import java.util.Set;
 
 import io.pivotal.jira.JiraIssue;
-import org.eclipse.egit.github.core.Label;
 
 
 /**
@@ -34,7 +34,7 @@ public interface LabelHandler {
 	 * Return all labels that this handler may apply to an issue,
 	 * so those may be pre-created.
 	 */
-	Set<Label> getAllLabels();
+	Set<Map<String, String>> getAllLabels();
 
 	/**
 	 * Map a {@link JiraIssue} to a set of applicable labels.

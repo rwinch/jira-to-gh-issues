@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2016 the original author or authors.
+ * Copyright 2002-2023 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -66,7 +66,9 @@ public class JiraClient {
 	@Autowired
 	public JiraClient(JiraConfig jiraConfig) {
 		this.jiraConfig = jiraConfig;
-		WebClient.Builder builder = WebClient.builder().baseUrl(jiraConfig.getBaseUrl() + "/rest/api/2");
+		WebClient.Builder builder = WebClient.builder()
+				.baseUrl(jiraConfig.getBaseUrl() + "/rest/api/2")
+				.codecs(configurer -> configurer.defaultCodecs().maxInMemorySize(-1));
 		if (jiraConfig.getUser() != null) {
 			builder = builder.defaultHeaders(headers ->
 					headers.setBasicAuth(jiraConfig.getUser(), jiraConfig.getPassword()));
@@ -187,7 +189,7 @@ public class JiraClient {
 		Flux.fromIterable(comments.entrySet())
 				.doOnNext(o -> tracker.updateForIteration())
 				.flatMap(entry -> webClient.post().uri("/issue/{key}/comment", entry.getKey())
-						.syncBody(Collections.singletonMap("body", entry.getValue()))
+						.bodyValue(Collections.singletonMap("body", entry.getValue()))
 						.retrieve()
 						.bodyToMono(Void.class)
 						.doOnError(WebClientResponseException.class,
