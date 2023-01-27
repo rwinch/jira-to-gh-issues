@@ -22,9 +22,10 @@ import io.pivotal.github.GithubIssue;
 import io.pivotal.github.ImportGithubIssue;
 import io.pivotal.jira.JiraFixVersion;
 import io.pivotal.jira.JiraIssue;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
-import static org.junit.Assert.*;
+import static org.assertj.core.api.Assertions.assertThat;
+
 
 /**
  * @author Rossen Stoyanchev
@@ -65,7 +66,7 @@ public class IssueProcessorTests {
 
 		issueProcessor.beforeImport(jiraIssue, importIssue);
 
-		assertNull(importIssue.getIssue().getAssignee());
+		assertThat(importIssue.getIssue().getAssignee()).isNull();
 	}
 
 	@Test
@@ -96,6 +97,6 @@ public class IssueProcessorTests {
 
 		issueProcessor.beforeImport(jiraIssue, importIssue);
 
-		assertNull(importIssue.getIssue().getAssignee());
+		assertThat((importIssue.getIssue().getAssignee())).isNull();
 	}
 }

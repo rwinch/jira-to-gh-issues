@@ -19,8 +19,8 @@ import java.io.StringWriter;
 import java.util.HashMap;
 import java.util.Map;
 
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.*;
 
@@ -34,7 +34,7 @@ public class JiraLinkConverterTests {
 	private JiraLinkConverter converter;
 
 
-	@Before
+	@BeforeEach
 	public void setUp() {
 		issueMappings.put("SPR-14828", 1);
 		issueMappings.put("SPR-16422", 2);

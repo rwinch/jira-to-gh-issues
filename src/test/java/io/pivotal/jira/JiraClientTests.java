@@ -23,8 +23,9 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
 
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 import io.pivotal.jira.JiraIssue.Fields;
 
@@ -36,7 +37,7 @@ public class JiraClientTests {
 	private JiraConfig jiraConfig;
 	private JiraClient client;
 
-	@Before
+	@BeforeEach
 	public void setup() {
 		jiraConfig = new JiraConfig();
 		jiraConfig.setBaseUrl("https://jira-stage.spring.io");

@@ -26,9 +26,9 @@ import io.pivotal.jira.JiraIssue;
 import io.pivotal.jira.JiraIssueType;
 import io.pivotal.jira.JiraResolution;
 import io.pivotal.jira.JiraStatus;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
-import static org.junit.Assert.*;
+import static org.assertj.core.api.Assertions.assertThat;
 
 
 public class LabelHandlerTests {
@@ -68,8 +68,8 @@ public class LabelHandlerTests {
 		jiraIssue.initFixAndBackportVersions();
 		Set<String> labels = labelHandler.getLabelsFor(jiraIssue);
 
-		assertEquals(new HashSet<>(Arrays.asList("in: core", "type: task", "status: declined",
-				"status: waiting-for-feedback")), labels);
+		assertThat(labels).containsOnly("in: core", "type: task", "status: declined",
+				"status: waiting-for-feedback");
 	}
 
 	@Test
@@ -95,7 +95,7 @@ public class LabelHandlerTests {
 		jiraIssue.initFixAndBackportVersions();
 		Set<String> labels = labelHandler.getLabelsFor(jiraIssue);
 
-		assertEquals(Collections.singleton("type: documentation"), labels);
+		assertThat(labels).containsExactly("type: documentation");
 	}
 
 	@Test
@@ -118,7 +118,7 @@ public class LabelHandlerTests {
 		jiraIssue.initFixAndBackportVersions();
 		Set<String> labels = labelHandler.getLabelsFor(jiraIssue);
 
-		assertEquals(Collections.singleton("type: regression"), labels);
+		assertThat(labels).containsExactly("type: regression");
 	}
 
 	@Test
@@ -132,7 +132,7 @@ public class LabelHandlerTests {
 		jiraIssue.setFields(fields);
 		jiraIssue.initFixAndBackportVersions();
 
-		assertEquals(Collections.singleton("status: waiting-for-triage"), labelHandler.getLabelsFor(jiraIssue));
+		assertThat(labelHandler.getLabelsFor(jiraIssue)).containsExactly("status: waiting-for-triage");
 	}
 
 	@Test
@@ -150,10 +150,10 @@ public class LabelHandlerTests {
 		jiraIssue.initFixAndBackportVersions();
 
 		jiraIssue.setVotes(9);
-		assertEquals(Collections.emptySet(), labelHandler.getLabelsFor(jiraIssue));
+		assertThat(labelHandler.getLabelsFor(jiraIssue)).isEmpty();
 
 		jiraIssue.setVotes(10);
-		assertEquals(Collections.singleton("has: votes-jira"), labelHandler.getLabelsFor(jiraIssue));
+		assertThat(labelHandler.getLabelsFor(jiraIssue)).containsExactly("has: votes-jira");
 	}
 
 	@Test
@@ -174,7 +174,7 @@ public class LabelHandlerTests {
 		jiraIssue.setFields(fields);
 		jiraIssue.initFixAndBackportVersions();
 
-		assertEquals(Collections.singleton("has: backports"), labelHandler.getLabelsFor(jiraIssue));
+		assertThat(labelHandler.getLabelsFor(jiraIssue)).containsExactly("has: backports");
 	}
 
 }

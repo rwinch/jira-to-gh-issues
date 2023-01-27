@@ -20,9 +20,9 @@ import java.util.Map;
 
 import io.pivotal.jira.JiraConfig;
 import io.pivotal.jira.JiraUser;
-import org.junit.Before;
-import org.junit.Ignore;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
+import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -33,7 +33,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 public class MarkdownEngineTests {
 	private MarkdownEngine engine;
 
-	@Before
+	@BeforeEach
 	public void setup() {
 		engine = new MarkdownEngine();
 		JiraConfig jiraConfig = new JiraConfig();
@@ -774,7 +774,7 @@ public class MarkdownEngineTests {
 	}
 
 	@Test
-	@Ignore
+	@Disabled
 	public void emphasisMediaTypeWithinLinkRef() {
 		String body =
 				"Safari 4:\n\n" +

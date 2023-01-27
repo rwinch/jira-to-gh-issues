@@ -15,8 +15,8 @@
  */
 package io.pivotal.util;
 
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.*;
 
@@ -27,7 +27,7 @@ import static org.assertj.core.api.Assertions.*;
 public class TextileEngineTests {
 	TextileEngine engine;
 
-	@Before
+	@BeforeEach
 	public void setup() {
 		engine = new TextileEngine();
 		engine.setJiraBaseUrl("https://jira.spring.io");
