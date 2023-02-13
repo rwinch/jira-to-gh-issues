@@ -602,6 +602,29 @@ public class MarkdownEngineTests {
 	}
 
 	@Test
+	public void blockCodeUpperCase() {
+		String body =
+				"{CODE:xml}\n" +
+						"    <filter-mapping>\n" +
+						"      <filter-name>springSecurityFilterChain</filter-name>\n" +
+						"      <url-pattern>/*</url-pattern>\n" +
+						"      <dispatcher>REQUEST</dispatcher>\n" +
+						"      <dispatcher>FORWARD</dispatcher>\n" +
+						"    </filter-mapping>\n{CODE}";
+
+		String convert = engine.convert(body);
+		assertThat(convert).isEqualTo(
+				"```xml\n" +
+						"<filter-mapping>\n" +
+						"  <filter-name>springSecurityFilterChain</filter-name>\n" +
+						"  <url-pattern>/*</url-pattern>\n" +
+						"  <dispatcher>REQUEST</dispatcher>\n" +
+						"  <dispatcher>FORWARD</dispatcher>\n" +
+						"</filter-mapping>\n" +
+						"```\n\n");
+	}
+
+	@Test
 	public void blockCodeNoNewLineAfterOrBefore() {
 		String body =
 				"{code}" +
