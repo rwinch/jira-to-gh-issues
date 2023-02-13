@@ -22,6 +22,7 @@ import lombok.Data;
 
 /**
  * @author Rob Winch
+ * @author Artem Bilan
  *
  */
 @Component
@@ -55,6 +56,7 @@ public class JiraConfig {
 	String password;
 
 	public String getMigrateJql() {
-		return migrateJql == null ? "project = " + getProjectId() + " ORDER BY key ASC" : migrateJql;
+		return this.migrateJql == null ? "project = '" + getProjectId() + "' ORDER BY key ASC" : this.migrateJql;
 	}
+
 }

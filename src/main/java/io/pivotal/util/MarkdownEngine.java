@@ -118,7 +118,7 @@ public class MarkdownEngine implements MarkupEngine {
 
 		// Code
 		text = text.replaceAll("\\{\\{(.+?)\\}\\}", "`$1`"); // inline code
-		text = text.replaceAll("\\{(code|noformat|panel)(:(\\w+))?(?:(:|\\|)\\w+=.+?)*\\}", "```$3 ");
+		text = text.replaceAll("(?i)\\{(code|noformat|panel)(:(\\w+))?(?:(:|\\|)\\w+=.+?)*\\}", "```$3 ");
 		text = text.replaceAll("(```\\w*) (.+)", "$1\n$2");
 		text = text.replaceAll("(.)(```) ", "$1\n$2");
 
