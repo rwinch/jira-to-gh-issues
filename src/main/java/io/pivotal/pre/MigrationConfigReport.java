@@ -32,15 +32,16 @@ import io.pivotal.jira.JiraVersion;
  * {@link io.pivotal.migration.SwfMigrationConfig}.
  *
  * @author Rossen Stoyanchev
+ * @author Artme Bilan
  */
 public class MigrationConfigReport extends BaseApp {
 
 
-	public static void main(String args[]) {
+	public static void main(String[] args) {
 
 		JiraConfig config = initJiraConfig();
 		JiraClient client = new JiraClient(config);
-		JiraProject project = client.findProject("SWF");
+		JiraProject project = client.findProject(config.getProjectId());
 
 		System.out.println("Components: \n" +
 				project.getComponents().stream().map(JiraComponent::getName).collect(Collectors.joining("\n")) +

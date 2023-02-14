@@ -68,6 +68,7 @@ import org.springframework.util.CollectionUtils;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.util.StringUtils;
+import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.util.UriComponents;
 import org.springframework.web.util.UriComponentsBuilder;
@@ -76,6 +77,7 @@ import org.springframework.web.util.UriComponentsBuilder;
 /**
  * @author Rob Winch
  * @author Rossen Stoyanchev
+ * @author Artem Bilan
  */
 @Data
 @Component
@@ -86,10 +88,10 @@ public class  MigrationClient {
 	private static final List<String> SUPPRESSED_LINK_TYPES = Arrays.asList("relates to", "is related to");
 
 	private static final ParameterizedTypeReference<Map<String, Object>> MAP_TYPE =
-			new ParameterizedTypeReference<Map<String, Object>>() {};
+			new ParameterizedTypeReference<>() {};
 
 	private static final ParameterizedTypeReference<List<Map<String, Object>>> LIST_OF_MAPS_TYPE =
-			new ParameterizedTypeReference<List<Map<String, Object>>>() {};
+			new ParameterizedTypeReference<>() {};
 
 	private static final String GITHUB_URL = "https://api.github.com";
 
@@ -205,7 +207,17 @@ public class  MigrationClient {
 			if (version.getReleaseDate() != null) {
 				map.put("due_on", version.getReleaseDate().toString(dateTimeFormatter));
 			}
-			this.getRest().exchange(requestBuilder.body(map), MAP_TYPE);
+			try {
+				getRest().exchange(requestBuilder.body(map), MAP_TYPE);
+			}
+			catch (HttpClientErrorException.UnprocessableEntity ex) {
+				if (ex.getMessage() != null && ex.getMessage().contains("already_exists")) {
+					logger.info("Milestone '{}' exists; ignore", version.getName());
+				}
+				else {
+					throw ex;
+				}
+			}
 		}
 		tracker.stopProgress();
 	}
@@ -220,7 +232,18 @@ public class  MigrationClient {
 		for (Map<String, String> map : labels) {
 			tracker.updateForIteration();
 			logger.debug("Creating label: \"{}\"", map);
-			getRest().exchange(bodyBuilder.body(map), MAP_TYPE);
+			try {
+				getRest().exchange(bodyBuilder.body(map), MAP_TYPE);
+			}
+			catch (HttpClientErrorException.UnprocessableEntity ex) {
+				if (ex.getMessage() != null && ex.getMessage().contains("already_exists")) {
+					logger.info("Label '{}' exists; ignore", map.get("name"));
+				}
+				else {
+					throw ex;
+				}
+			}
+
 		}
 		tracker.stopProgress();
 	}
@@ -640,11 +663,17 @@ public class  MigrationClient {
 		GithubIssue ghIssue = new GithubIssue();
 		ghIssue.setMilestone((Integer) milestone.get("number"));
 		ghIssue.setTitle(milestone.get("title") + " Backported Issues");
-		DateTime dueOnDateTime = this.dateTimeFormatter.parseDateTime((String) milestone.get("due_on"));
-		ghIssue.setCreatedAt(dueOnDateTime);
+		DateTime dueOnDateTime = null;
+		String due_on = (String) milestone.get("due_on");
+		if (StringUtils.hasText(due_on)) {
+			dueOnDateTime = this.dateTimeFormatter.parseDateTime(due_on);
+			ghIssue.setCreatedAt(dueOnDateTime);
+		}
 		if (milestone.get("state").equals("closed")) {
 			ghIssue.setClosed(true);
-			ghIssue.setClosedAt(dueOnDateTime);
+			if (dueOnDateTime != null) {
+				ghIssue.setClosedAt(dueOnDateTime);
+			}
 		}
 		String body = backportIssues.stream()
 				.map(jiraIssue -> {

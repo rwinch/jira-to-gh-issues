@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2018 the original author or authors.
+ * Copyright 2002-2023 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -32,11 +32,12 @@ import io.pivotal.jira.JiraUser;
  * src/main/resources/jira-to-github-users.properties.
  *
  * @author Rossen Stoyanchev
+ * @author Artem Bilan
  */
 public class AssigneesReport extends BaseApp {
 
 
-	public static void main(String args[]) {
+	public static void main(String[] args) {
 
 		JiraConfig config = initJiraConfig();
 		JiraClient client = new JiraClient(config);
@@ -50,11 +51,11 @@ public class AssigneesReport extends BaseApp {
 			}
 		}
 
-		List<String> assignees = result.entrySet().stream()
+		String assignees = result.entrySet().stream()
 				.map(entry -> entry.getKey() + " [" + entry.getValue().get() + "]")
-				.collect(Collectors.toList());
+				.collect(Collectors.joining(System.lineSeparator()));
 
-		System.out.println("Assignees: \n" + assignees + "\n\n");
+		System.out.println("Assignees: \n" + assignees);
 	}
 
 }
