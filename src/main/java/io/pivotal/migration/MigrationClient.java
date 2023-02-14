@@ -211,12 +211,11 @@ public class  MigrationClient {
 				getRest().exchange(requestBuilder.body(map), MAP_TYPE);
 			}
 			catch (HttpClientErrorException.UnprocessableEntity ex) {
-				// The milestone already exists on GH, so swallow its error and continue
-				if (ex.getMessage() != null && !ex.getMessage().contains("already_exists")) {
-					throw ex;
+				if (ex.getMessage() != null && ex.getMessage().contains("already_exists")) {
+					logger.info("Milestone '{}' exists; ignore", version.getName());
 				}
 				else {
-					logger.info("Milestone '{}' exists; ignore", version.getName());
+					throw ex;
 				}
 			}
 		}
@@ -237,12 +236,11 @@ public class  MigrationClient {
 				getRest().exchange(bodyBuilder.body(map), MAP_TYPE);
 			}
 			catch (HttpClientErrorException.UnprocessableEntity ex) {
-				// The milestone already exists on GH, so swallow its error and continue
-				if (ex.getMessage() != null && !ex.getMessage().contains("already_exists")) {
-					throw ex;
+				if (ex.getMessage() != null && ex.getMessage().contains("already_exists")) {
+					logger.info("Label '{}' exists; ignore", map.get("name"));
 				}
 				else {
-					logger.info("Label '{}' exists; ignore", map.get("name"));
+					throw ex;
 				}
 			}
 
